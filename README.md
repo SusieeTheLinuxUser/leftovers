@@ -2,7 +2,8 @@
 
 A KDE Plasma 6 widget that shows how much of your AI coding plans you have left, with reset timers.
 
-![screenshot](screenshot.png)
+![screenshot](<img width="597" height="735" alt="Screenshot_20261029_034453" src="https://github.com/user-attachments/assets/142e8e2a-59f4-47fd-a755-1add5373e318" />
+)
 
 | Provider | Reads login from | Limits |
 |---|---|---|
