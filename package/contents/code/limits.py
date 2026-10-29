@@ -103,9 +103,23 @@ def kimi(d):
                 for k, n in names.items() if usages.get(k)]
 
 
+def t3(driver, *keys):
+    """Account dirs set up as provider instances in T3 Code (Settings > Providers)."""
+    try:
+        instances = json.load(open(f"{HOME}/.t3/userdata/settings.json"))["providerInstances"].values()
+    except (OSError, ValueError, KeyError):
+        return []
+    return [os.path.expanduser(i["config"][k]) for i in instances if i.get("driver") == driver
+            for k in keys if i.get("config", {}).get(k)]
+
+
 PROVIDERS = (
-    ("Claude", claude, [os.environ.get("CLAUDE_CONFIG_DIR", ""), f"{HOME}/.claude", *glob.glob(f"{HOME}/.claude?*/")]),
-    ("Codex", codex, [os.environ.get("CODEX_HOME", ""), f"{HOME}/.codex", *glob.glob(f"{HOME}/.codex?*/")]),
+    ("Claude", claude, [os.environ.get("CLAUDE_CONFIG_DIR", ""), f"{HOME}/.claude", *glob.glob(f"{HOME}/.claude?*/"),
+                        *t3("claudeAgent", "homePath")]),
+    ("Codex", codex, [os.environ.get("CODEX_HOME", ""), f"{HOME}/.codex", *glob.glob(f"{HOME}/.codex?*/"),
+                      *t3("codex", "homePath", "shadowHomePath"),
+                      # ChatGPT accounts added with T3 Code's own login button
+                      *glob.glob(f"{HOME}/.t3/userdata/providers/codex/*/shadow/")]),
     ("Cursor", cursor, [f"{HOME}/.config/cursor"]),
     ("Kimi", kimi, [f"{HOME}/.kimi-code", *glob.glob(f"{HOME}/.kimi?*/")]),
 )
