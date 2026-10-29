@@ -68,7 +68,10 @@ def codex(d):
         # Expired login or API hiccup: the newest local session log still has the numbers from your last run.
         for path in sorted(glob.glob(f"{d}/sessions/*/*/*/rollout-*.jsonl"), key=os.path.getmtime, reverse=True):
             for line in reversed(open(path).readlines()):
-                rl = json.loads(line).get("payload", {}).get("rate_limits") if '"rate_limits"' in line else None
+                try:
+                    rl = json.loads(line).get("payload", {}).get("rate_limits") if '"rate_limits"' in line else None
+                except ValueError:
+                    continue  # codex may still be writing the last line
                 out = [{"name": NAMES.get(w["window_minutes"], f"{w['window_minutes'] // 60}h"),
                         "used": w["used_percent"], "resets": w.get("resets_at")}
                        for w in (rl or {}).values() if isinstance(w, dict) and w.get("window_minutes")]
