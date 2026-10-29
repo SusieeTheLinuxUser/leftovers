@@ -10,7 +10,7 @@ A KDE Plasma 6 widget that shows how much of your AI coding plans you have left,
 | Codex | `~/.codex/auth.json` (falls back to session logs) | Session, Weekly / Monthly |
 | Grok Build | `~/.grok/auth.json` | Weekly credits |
 
-**Multiple accounts:** every config dir is an account. Anything matching `~/.claude*/`, `~/.codex*/` or `~/.kimi*/`
+**Multiple accounts:** every config dir is an account. Anything matching `~/.claude*/` or `~/.codex*/`
 is picked up automatically, so `CLAUDE_CONFIG_DIR=~/.claude_work claude` or `CODEX_HOME=~/.codex-work codex`
 show up as extra accounts: flip between them with the ‹ › arrows next to the provider name.
 
