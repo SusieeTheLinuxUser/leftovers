@@ -8,8 +8,7 @@ A KDE Plasma 6 widget that shows how much of your AI coding plans you have left,
 |---|---|---|
 | Claude | `~/.claude/.credentials.json` | Session, Weekly, Weekly Opus/Sonnet |
 | Codex | `~/.codex/auth.json` (falls back to session logs) | Session, Weekly / Monthly |
-| Cursor | `~/.config/cursor/auth.json` (`cursor-agent login`) | Auto, API |
-| Kimi Code | `~/.kimi-code/credentials/kimi-code.json` | Session, Weekly, Monthly |
+| Grok Build | `~/.grok/auth.json` | Weekly credits |
 
 **Multiple accounts:** every config dir is an account. Anything matching `~/.claude*/`, `~/.codex*/` or `~/.kimi*/`
 is picked up automatically, so `CLAUDE_CONFIG_DIR=~/.claude_work claude` or `CODEX_HOME=~/.codex-work codex`
@@ -25,9 +24,8 @@ show up without any extra config.
 Account emails are blurred until you click one. On the desktop, push the card into a screen corner or
 against an edge and it fills the gap and squares off those corners.
 
-The panel shows the limit closest to running out. Claude, Codex and Cursor logins are only read, never
-refreshed: if one expired, open that CLI once and the widget catches up on its next poll (every 5 minutes).
-Kimi tokens only last 15 minutes, so the widget refreshes those itself, under the same lock the kimi CLI uses.
+The panel shows the limit closest to running out. Logins are only read, never refreshed: if one expired,
+open that CLI once and the widget catches up on its next poll (every 5 minutes).
 
 ## Install
 

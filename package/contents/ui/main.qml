@@ -12,7 +12,7 @@ PlasmoidItem {
     property var providers: []
     property real now: Date.now()
     readonly property string script: Qt.resolvedUrl("../code/limits.py").toString().replace("file://", "")
-    readonly property var tints: ({ Claude: "#d97757", Codex: "#ffffff", Cursor: "#a78bfa", Kimi: "#3b82f6" })
+    readonly property var tints: ({ Claude: "#d97757", Codex: "#ffffff", Grok: "#a1a1aa" })
     // QML hands JSON arrays back as list types without flatMap, hence the plain loop.
     readonly property var all: {
         const out = []
@@ -243,7 +243,7 @@ PlasmoidItem {
             }
             Text {
                 visible: root.providers.length === 0
-                text: "Log in to claude, codex, cursor-agent or kimi in a terminal and they'll show up here."
+                text: "Log in to claude, codex or grok in a terminal and they'll show up here."
                 color: "#a3a3a3"
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
