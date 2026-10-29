@@ -98,8 +98,12 @@ PlasmoidItem {
 
     fullRepresentation: Item {
         id: card
-        Layout.preferredWidth: Kirigami.Units.gridUnit * 20
-        Layout.preferredHeight: content.implicitHeight + content.anchors.margins * 2
+        // Hug the content: a bigger desktop box would otherwise just be empty black.
+        readonly property real pad: Kirigami.Units.largeSpacing * 1.5
+        readonly property real fitHeight: content.implicitHeight + pad * 2
+        Layout.preferredWidth: Kirigami.Units.gridUnit * 17
+        Layout.preferredHeight: fitHeight
+        Layout.maximumHeight: fitHeight
 
         // On the desktop, a card pushed against a screen edge grows into the leftover gap and squares
         // the corners there, so a corner placement fills the corner. -1 = not near that edge.
@@ -117,15 +121,15 @@ PlasmoidItem {
                 const a = Plasmoid.containment.availableScreenRect, p = card.mapToItem(null, 0, 0)
                 const snap = d => d >= 0 && d < Kirigami.Units.gridUnit * 2 ? d : -1
                 const g = [snap(p.x - a.x), snap(p.y - a.y), snap(a.x + a.width - p.x - card.width),
-                           snap(a.y + a.height - p.y - card.height)]
+                           snap(a.y + a.height - p.y - card.fitHeight)]
                 if (g.join() !== card.gaps.join()) card.gaps = g
             }
         }
         Rectangle {
-            anchors {
-                fill: parent
-                leftMargin: -card.gap(0); topMargin: -card.gap(1); rightMargin: -card.gap(2); bottomMargin: -card.gap(3)
-            }
+            x: -card.gap(0)
+            y: -card.gap(1)
+            width: card.width + card.gap(0) + card.gap(2)
+            height: card.fitHeight + card.gap(1) + card.gap(3)
             color: "#000000"
             topLeftRadius: card.square(0, 1)
             topRightRadius: card.square(2, 1)
@@ -135,7 +139,7 @@ PlasmoidItem {
 
         ColumnLayout {
             id: content
-            anchors { fill: parent; margins: Kirigami.Units.gridUnit }
+            anchors { top: parent.top; left: parent.left; right: parent.right; margins: card.pad }
             spacing: Kirigami.Units.largeSpacing
 
             Repeater {
@@ -155,7 +159,7 @@ PlasmoidItem {
                         root.picks = p
                     }
                     Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing * 1.5
+                    spacing: Kirigami.Units.smallSpacing
 
                     Rectangle {
                         visible: provider.index > 0
@@ -209,7 +213,7 @@ PlasmoidItem {
                             font: Kirigami.Theme.smallFont
                             elide: Text.ElideMiddle
                             horizontalAlignment: Text.AlignRight
-                            Layout.maximumWidth: Kirigami.Units.gridUnit * 11
+                            Layout.maximumWidth: Kirigami.Units.gridUnit * 9
                             layer.enabled: !root.reveal && !!provider.account.account
                             layer.effect: MultiEffect { blurEnabled: true; blur: 1; blurMax: 32 }
                             MouseArea {

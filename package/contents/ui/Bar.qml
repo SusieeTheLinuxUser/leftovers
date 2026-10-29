@@ -14,7 +14,7 @@ ColumnLayout {
     // A reset that already passed means the numbers are stale until the next fetch: treat as full.
     readonly property real remaining: resets && secs <= 0 ? 100 : Math.max(0, Math.min(100, 100 - used))
 
-    spacing: Kirigami.Units.smallSpacing
+    spacing: 2
 
     function fmt(s) {
         const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60)
