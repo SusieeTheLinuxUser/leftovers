@@ -14,11 +14,13 @@ PlasmoidItem {
     readonly property string script: Qt.resolvedUrl("../code/limits.py").toString().replace("file://", "")
     readonly property var tints: ({ Claude: "#d97757", Codex: "#ffffff", Grok: "#a1a1aa" })
     // QML hands JSON arrays back as list types without flatMap, hence the plain loop.
+    // A reset that already passed means the numbers are stale until the next fetch: count it as unused, like Bar.
     readonly property var all: {
         const out = []
         for (const p of providers)
             for (const l of p.limits)
-                out.push(Object.assign({ provider: p.name, account: p.account }, l))
+                out.push(Object.assign({ provider: p.name, account: p.account }, l,
+                                       l.resets && l.resets * 1000 <= now ? { used: 0 } : {}))
         return out
     }
     // The panel shows whichever limit is closest to running out.
