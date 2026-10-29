@@ -13,7 +13,7 @@ A KDE Plasma 6 widget that shows how much of your AI coding plans you have left,
 
 **Multiple accounts:** every config dir is an account. Anything matching `~/.claude*/`, `~/.codex*/` or `~/.kimi*/`
 is picked up automatically, so `CLAUDE_CONFIG_DIR=~/.claude_work claude` or `CODEX_HOME=~/.codex-work codex`
-just show up as extra sections.
+show up as extra accounts: flip between them with the ‹ › arrows next to the provider name.
 
 The panel shows the limit closest to running out. Nothing is ever refreshed or written to your CLI logins:
 if a token expired, open that CLI once and the widget catches up on its next poll (every 5 minutes).

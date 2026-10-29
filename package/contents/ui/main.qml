@@ -23,6 +23,17 @@ PlasmoidItem {
     // The panel shows whichever limit is closest to running out.
     readonly property var lowest: all.reduce((a, b) => (!a || b.used > a.used ? b : a), null)
     readonly property real lowestLeft: lowest ? Math.max(0, 100 - lowest.used) : 0
+    // One section per provider; extra accounts are flipped through with the arrows.
+    readonly property var groups: {
+        const out = []
+        for (const p of providers) {
+            const g = out.find(g => g.name === p.name)
+            if (g) g.accounts.push(p)
+            else out.push({ name: p.name, accounts: [p] })
+        }
+        return out
+    }
+    property var picks: ({})  // provider name -> account index, kept on root so refreshes don't reset it
 
     function tint(name) { return tints[name] || "#a3a3a3" }
 
@@ -95,12 +106,21 @@ PlasmoidItem {
             spacing: Kirigami.Units.largeSpacing
 
             Repeater {
-                model: root.providers
+                model: root.groups
                 delegate: ColumnLayout {
                     id: provider
                     required property var modelData
                     required property int index
-                    readonly property color tint: root.tint(modelData.name)
+                    readonly property var group: modelData
+                    readonly property int count: group.accounts.length
+                    readonly property int pick: (root.picks[group.name] || 0) % count
+                    readonly property var account: group.accounts[pick]
+                    readonly property color tint: root.tint(group.name)
+                    function flip(step) {
+                        const p = Object.assign({}, root.picks)
+                        p[group.name] = (pick + step + count) % count
+                        root.picks = p
+                    }
                     Layout.fillWidth: true
                     spacing: Kirigami.Units.smallSpacing * 1.5
 
@@ -120,12 +140,31 @@ PlasmoidItem {
                             color: provider.tint
                         }
                         Text {
-                            text: provider.modelData.name
+                            text: provider.group.name
                             color: provider.tint
                             font.weight: Font.DemiBold
                         }
+                        Repeater {
+                            model: provider.count > 1 ? [-1, 1] : []
+                            delegate: Text {
+                                required property int modelData
+                                text: modelData < 0 ? "‹" : "›"
+                                color: arrow.containsMouse ? provider.tint : "#5c5c5c"
+                                font.weight: Font.DemiBold
+                                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.3
+                                leftPadding: Kirigami.Units.smallSpacing
+                                rightPadding: Kirigami.Units.smallSpacing
+                                MouseArea {
+                                    id: arrow
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: provider.flip(parent.modelData)
+                                }
+                            }
+                        }
                         Text {
-                            text: provider.modelData.account
+                            text: (provider.count > 1 ? `${provider.pick + 1}/${provider.count} · ` : "") + provider.account.account
                             color: "#5c5c5c"
                             font: Kirigami.Theme.smallFont
                             elide: Text.ElideMiddle
@@ -134,15 +173,15 @@ PlasmoidItem {
                         }
                     }
                     Text {
-                        visible: !!provider.modelData.error
-                        text: (provider.modelData.limits.length ? "last known numbers · " : "") + provider.modelData.error
+                        visible: !!provider.account.error
+                        text: (provider.account.limits.length ? "last known numbers · " : "") + provider.account.error
                         color: "#5c5c5c"
                         font: Kirigami.Theme.smallFont
                         wrapMode: Text.Wrap
                         Layout.fillWidth: true
                     }
                     Repeater {
-                        model: provider.modelData.limits
+                        model: provider.account.limits
                         delegate: Bar {
                             required property var modelData
                             Layout.fillWidth: true
