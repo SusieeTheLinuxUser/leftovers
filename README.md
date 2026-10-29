@@ -22,8 +22,12 @@ show up as extra accounts: flip between them with the ‹ › arrows next to the
 [Codex](https://github.com/pingdotgg/t3code/blob/main/docs/user/providers-codex.md#use-multiple-accounts) docs
 show up without any extra config.
 
-The panel shows the limit closest to running out. Nothing is ever refreshed or written to your CLI logins:
-if a token expired, open that CLI once and the widget catches up on its next poll (every 5 minutes).
+Account emails are blurred until you click one. On the desktop, push the card into a screen corner or
+against an edge and it fills the gap and squares off those corners.
+
+The panel shows the limit closest to running out. Claude, Codex and Cursor logins are only read, never
+refreshed: if one expired, open that CLI once and the widget catches up on its next poll (every 5 minutes).
+Kimi tokens only last 15 minutes, so the widget refreshes those itself, under the same lock the kimi CLI uses.
 
 ## Install
 

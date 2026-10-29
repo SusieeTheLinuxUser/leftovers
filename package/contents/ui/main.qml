@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import QtQuick.Layouts
 import org.kde.plasma.plasmoid
 import org.kde.plasma.core as PlasmaCore
@@ -33,13 +34,14 @@ PlasmoidItem {
         }
         return out
     }
+    property bool reveal: false  // emails stay blurred until clicked
     property var picks: ({})  // provider name -> account index, kept on root so refreshes don't reset it
 
     function tint(name) { return tints[name] || "#a3a3a3" }
 
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground  // on the desktop the black card is the background
     toolTipMainText: "Leftovers"
-    toolTipSubText: all.map(l => `${l.provider}${l.account ? ` (${l.account})` : ""} ${l.name}: ${Math.round(100 - l.used)}% left`).join("\n")
+    toolTipSubText: all.map(l => `${l.provider}${root.reveal && l.account ? ` (${l.account})` : ""} ${l.name}: ${Math.round(100 - l.used)}% left`).join("\n")
 
     P5Support.DataSource {
         id: exec
@@ -94,11 +96,42 @@ PlasmoidItem {
         }
     }
 
-    fullRepresentation: Rectangle {
+    fullRepresentation: Item {
+        id: card
         Layout.preferredWidth: Kirigami.Units.gridUnit * 20
         Layout.preferredHeight: content.implicitHeight + content.anchors.margins * 2
-        color: "#000000"
-        radius: 10
+
+        // On the desktop, a card pushed against a screen edge grows into the leftover gap and squares
+        // the corners there, so a corner placement fills the corner. -1 = not near that edge.
+        property var gaps: [-1, -1, -1, -1]  // left, top, right, bottom
+        readonly property bool onDesktop: Plasmoid.formFactor === PlasmaCore.Types.Planar
+        function gap(i) { return Math.max(0, gaps[i]) }
+        function square(i, j) { return gaps[i] >= 0 || gaps[j] >= 0 ? 0 : 10 }
+        // ponytail: polled since an applet can't easily watch its container being dragged; settles within 1s.
+        Timer {
+            interval: 1000
+            running: card.onDesktop && card.visible
+            repeat: true
+            triggeredOnStart: true
+            onTriggered: {
+                const a = Plasmoid.containment.availableScreenRect, p = card.mapToItem(null, 0, 0)
+                const snap = d => d >= 0 && d < Kirigami.Units.gridUnit * 2 ? d : -1
+                const g = [snap(p.x - a.x), snap(p.y - a.y), snap(a.x + a.width - p.x - card.width),
+                           snap(a.y + a.height - p.y - card.height)]
+                if (g.join() !== card.gaps.join()) card.gaps = g
+            }
+        }
+        Rectangle {
+            anchors {
+                fill: parent
+                leftMargin: -card.gap(0); topMargin: -card.gap(1); rightMargin: -card.gap(2); bottomMargin: -card.gap(3)
+            }
+            color: "#000000"
+            topLeftRadius: card.square(0, 1)
+            topRightRadius: card.square(2, 1)
+            bottomLeftRadius: card.square(0, 3)
+            bottomRightRadius: card.square(2, 3)
+        }
 
         ColumnLayout {
             id: content
@@ -163,13 +196,27 @@ PlasmoidItem {
                                 }
                             }
                         }
+                        Item { Layout.fillWidth: true }
                         Text {
-                            text: (provider.count > 1 ? `${provider.pick + 1}/${provider.count} · ` : "") + provider.account.account
+                            visible: provider.count > 1
+                            text: `${provider.pick + 1}/${provider.count} ·`
+                            color: "#5c5c5c"
+                            font: Kirigami.Theme.smallFont
+                        }
+                        Text {
+                            text: provider.account.account
                             color: "#5c5c5c"
                             font: Kirigami.Theme.smallFont
                             elide: Text.ElideMiddle
                             horizontalAlignment: Text.AlignRight
-                            Layout.fillWidth: true
+                            Layout.maximumWidth: Kirigami.Units.gridUnit * 11
+                            layer.enabled: !root.reveal && !!provider.account.account
+                            layer.effect: MultiEffect { blurEnabled: true; blur: 1; blurMax: 32 }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.reveal = !root.reveal
+                            }
                         }
                     }
                     Text {
