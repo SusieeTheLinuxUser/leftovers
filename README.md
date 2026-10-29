@@ -29,6 +29,9 @@ open that CLI once and the widget catches up on its next poll (every 5 minutes).
 
 ## Install
 
+In Plasma: **Add Widgets → Get New Widgets → Download New Plasma Widgets**, search for **Leftovers**
+([KDE Store page](https://www.opendesktop.org/p/2380570/)). Or from source:
+
 ```sh
 git clone https://github.com/SusieeTheLinuxUser/leftovers
 kpackagetool6 -t Plasma/Applet -i leftovers/package   # -u to upgrade
