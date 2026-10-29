@@ -1,0 +1,14 @@
+{
+    "KPlugin": {
+        "Id": "com.susiee.leftovers",
+        "Name": "Leftovers",
+        "Description": "How much of your Claude, Codex, Cursor and Kimi plans you have left, per account, with reset timers",
+        "Icon": "office-chart-bar",
+        "Authors": [{ "Name": "Susiee" }],
+        "License": "MIT",
+        "Website": "https://github.com/SusieeTheLinuxUser/leftovers",
+        "Version": "0.2"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}
