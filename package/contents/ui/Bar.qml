@@ -8,6 +8,7 @@ ColumnLayout {
     property real used
     property var resets  // epoch seconds, null while the window hasn't started
     property color tint
+    property int tickets  // free resets the provider gave you
     property real now: Date.now()
 
     readonly property real secs: resets ? resets - now / 1000 : 0
@@ -26,6 +27,12 @@ ColumnLayout {
             text: bar.label
             color: "#a3a3a3"
             Layout.fillWidth: true
+        }
+        Text {
+            visible: bar.tickets > 0
+            text: `🎟 ${bar.tickets}`
+            color: bar.tint
+            font: Kirigami.Theme.smallFont
         }
         Text {
             visible: bar.secs > 0

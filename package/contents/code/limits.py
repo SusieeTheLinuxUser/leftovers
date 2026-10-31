@@ -9,6 +9,7 @@ import glob
 import json
 import os
 import shutil
+import subprocess
 import time
 import urllib.request
 from datetime import datetime
@@ -34,6 +35,17 @@ def fresh(expires, cli):
         raise RuntimeError(f"login expired, open {cli} once to refresh it")
 
 
+def claude_version():
+    # The native install's binary is named after its version; an npm one resolves to cli.js: ask it.
+    v = os.path.basename(os.path.realpath(shutil.which("claude") or "x"))
+    if not v[:1].isdigit():
+        try:
+            v = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=10).stdout.split()[0]
+        except (OSError, IndexError, subprocess.SubprocessError):
+            pass
+    return v
+
+
 def claude(d):
     creds = json.load(open(f"{d}/.credentials.json"))["claudeAiOauth"]
     # The default dir keeps its account info next to it, CLAUDE_CONFIG_DIR ones keep it inside.
@@ -43,14 +55,18 @@ def claude(d):
     except (OSError, ValueError, KeyError):
         email = ""
     fresh(creds["expiresAt"] / 1000, "claude")
-    data = get("https://api.anthropic.com/api/oauth/usage", {
+    # cedar_ember=1 adds the free limit resets Anthropic grants (same request T3 Code makes).
+    data = get("https://api.anthropic.com/api/oauth/usage?cedar_ember=1", {
         "Authorization": "Bearer " + creds["accessToken"], "anthropic-beta": "oauth-2025-04-20",
-        # Generic clients get 429 here; identify as the Claude Code whose login this is.
-        "User-Agent": "claude-code/" + os.path.basename(os.path.realpath(shutil.which("claude") or "x"))})
+        # Generic clients get 429 here, and other surfaces aren't eligible for resets: identify as the CLI.
+        "User-Agent": f"claude-cli/{claude_version()} (external, cli)"})
     names = {"five_hour": "Session", "seven_day": "Weekly", "seven_day_opus": "Weekly Opus",
              "seven_day_sonnet": "Weekly Sonnet"}
+    grants = data.get("cedar_ember") or {}
+    tickets = sum(g.get("resets_left", 0) for g in grants.get("grants") or [] if grants.get("eligible")
+                  and g.get("usable_now") and not g.get("paused") and (ts(g.get("ends_at")) or 1e12) > time.time())
     return email, [{"name": n, "used": data[k]["utilization"], "resets": ts(data[k].get("resets_at"))}
-                   for k, n in names.items() if data.get(k)]
+                   for k, n in names.items() if data.get(k)], tickets
 
 
 def codex(d):
@@ -58,12 +74,15 @@ def codex(d):
     email = jwt(tokens["id_token"]).get("email", "")
     try:
         fresh(jwt(tokens["access_token"])["exp"], "codex")
-        rl = get("https://chatgpt.com/backend-api/wham/usage", {
+        data = get("https://chatgpt.com/backend-api/wham/usage", {
             "Authorization": "Bearer " + tokens["access_token"], "ChatGPT-Account-Id": tokens["account_id"],
-            "User-Agent": "codex-cli"})["rate_limit"]
+            "User-Agent": "codex-cli"})
+        rl = data["rate_limit"]
         windows = [(w["limit_window_seconds"] // 60, w) for w in (rl.get("primary_window"), rl.get("secondary_window")) if w]
+        # Free limit resets ChatGPT hands out, spendable from the Codex app.
+        tickets = (data.get("rate_limit_reset_credits") or {}).get("available_count") or 0
         return email, [{"name": NAMES.get(m, f"{m // 60}h"), "used": w["used_percent"], "resets": w.get("reset_at")}
-                       for m, w in windows]
+                       for m, w in windows], tickets
     except Exception as e:
         # Expired login or API hiccup: the newest local session log still has the numbers from your last run.
         for path in sorted(glob.glob(f"{d}/sessions/*/*/*/rollout-*.jsonl"), key=os.path.getmtime, reverse=True):
@@ -121,8 +140,10 @@ if __name__ == "__main__":
         for d in dict.fromkeys(os.path.normpath(d) for d in dirs if d):  # dedupe, keep order
             key = f"{name}:{d}"
             try:
-                account, limits = fetch(d)
-                cache[key] = {"account": account, "limits": limits}
+                account, limits, *tickets = fetch(d)  # grok has no free resets
+                # The Codex session-log fallback has no count: keep the last one rather than hide it.
+                cache[key] = {"account": account, "limits": limits,
+                              "tickets": tickets[0] if tickets else cache.get(key, {}).get("tickets", 0)}
                 result["providers"].append({"name": name, **cache[key]})
             except FileNotFoundError:
                 pass  # not installed / not an account dir: just don't show it

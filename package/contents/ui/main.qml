@@ -237,11 +237,13 @@ PlasmoidItem {
                         model: provider.account.limits
                         delegate: Bar {
                             required property var modelData
+                            required property int index
                             Layout.fillWidth: true
                             label: modelData.name
                             used: modelData.used
                             resets: modelData.resets
                             tint: provider.tint
+                            tickets: index === 0 ? provider.account.tickets || 0 : 0  // once per account
                             now: root.now
                         }
                     }
