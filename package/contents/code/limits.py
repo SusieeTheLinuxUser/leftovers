@@ -9,6 +9,7 @@ import glob
 import json
 import os
 import shutil
+import subprocess
 import time
 import urllib.request
 from datetime import datetime
@@ -34,6 +35,17 @@ def fresh(expires, cli):
         raise RuntimeError(f"login expired, open {cli} once to refresh it")
 
 
+def claude_version():
+    # The native install's binary is named after its version; an npm one resolves to cli.js: ask it.
+    v = os.path.basename(os.path.realpath(shutil.which("claude") or "x"))
+    if not v[:1].isdigit():
+        try:
+            v = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=10).stdout.split()[0]
+        except (OSError, IndexError, subprocess.SubprocessError):
+            pass
+    return v
+
+
 def claude(d):
     creds = json.load(open(f"{d}/.credentials.json"))["claudeAiOauth"]
     # The default dir keeps its account info next to it, CLAUDE_CONFIG_DIR ones keep it inside.
@@ -47,7 +59,7 @@ def claude(d):
     data = get("https://api.anthropic.com/api/oauth/usage?cedar_ember=1", {
         "Authorization": "Bearer " + creds["accessToken"], "anthropic-beta": "oauth-2025-04-20",
         # Generic clients get 429 here, and other surfaces aren't eligible for resets: identify as the CLI.
-        "User-Agent": f"claude-cli/{os.path.basename(os.path.realpath(shutil.which('claude') or 'x'))} (external, cli)"})
+        "User-Agent": f"claude-cli/{claude_version()} (external, cli)"})
     names = {"five_hour": "Session", "seven_day": "Weekly", "seven_day_opus": "Weekly Opus",
              "seven_day_sonnet": "Weekly Sonnet"}
     grants = data.get("cedar_ember") or {}
@@ -129,7 +141,9 @@ if __name__ == "__main__":
             key = f"{name}:{d}"
             try:
                 account, limits, *tickets = fetch(d)  # grok has no free resets
-                cache[key] = {"account": account, "limits": limits, "tickets": tickets[0] if tickets else 0}
+                # The Codex session-log fallback has no count: keep the last one rather than hide it.
+                cache[key] = {"account": account, "limits": limits,
+                              "tickets": tickets[0] if tickets else cache.get(key, {}).get("tickets", 0)}
                 result["providers"].append({"name": name, **cache[key]})
             except FileNotFoundError:
                 pass  # not installed / not an account dir: just don't show it
