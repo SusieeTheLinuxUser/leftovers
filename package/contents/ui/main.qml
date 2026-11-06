@@ -252,7 +252,7 @@ PlasmoidItem {
             }
             Text {
                 visible: root.providers.length === 0
-                text: "Log in to claude, codex, grok, Antigravity or opencode's OpenRouter and they'll show up here."
+                text: "Log in to claude, codex, grok, T3 Code's Antigravity or opencode's OpenRouter and they'll show up here."
                 color: "#a3a3a3"
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
