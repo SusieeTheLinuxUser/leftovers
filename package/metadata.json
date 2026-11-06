@@ -2,12 +2,12 @@
     "KPlugin": {
         "Id": "com.susiee.leftovers",
         "Name": "Leftovers",
-        "Description": "How much of your Claude, Codex and Grok plans you have left, per account, with reset timers",
+        "Description": "How much of your Claude, Codex, Grok, Antigravity and OpenRouter plans you have left, per account, with reset timers",
         "Icon": "office-chart-bar",
         "Authors": [{ "Name": "Susiee" }],
         "License": "MIT",
         "Website": "https://github.com/SusieeTheLinuxUser/leftovers",
-        "Version": "0.3"
+        "Version": "0.4"
     },
     "KPackageStructure": "Plasma/Applet",
     "X-Plasma-API-Minimum-Version": "6.0"
