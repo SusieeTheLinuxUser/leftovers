@@ -179,7 +179,7 @@ def openrouter_limits(credits, key, now):
     reset = key.get("limit_reset")  # daily / weekly / monthly / None
     if key.get("limit"):
         period = {"daily": "day", "weekly": "week", "monthly": "month"}.get(reset)
-        used = key.get(f"usage_{reset}", key["usage"]) if period else key["usage"]
+        used = key["limit"] - key["limit_remaining"]  # what OpenRouter enforces, BYOK included when it counts
         out.append(bar(f"Key this {period}" if period else "Key limit", key["limit"], used,
                        f"${used:.2f}/${key['limit']:g}", next_reset(period, now)))
     return out
@@ -235,10 +235,12 @@ def selfcheck():
     assert next_reset("month", datetime(2026, 12, 31, tzinfo=timezone.utc).timestamp()) == \
         datetime(2027, 1, 1, tzinfo=timezone.utc).timestamp()
     credits = {"total_credits": 20, "total_usage": 4.9}
-    key = {"limit": 20, "limit_reset": "monthly", "usage": 4.9, "usage_monthly": 1.5}
+    key = {"limit": 20, "limit_reset": "monthly", "limit_remaining": 18.5, "usage": 4.9, "usage_monthly": 1.5}
     assert openrouter_limits(credits, key, now) == [
         {"name": "Credits", "used": 24.5, "resets": None, "value": "$15.10 left"},
         {"name": "Key this month", "used": 7.5, "resets": next_reset("month", now), "value": "$1.50/$20"}]
+    key.update(include_byok_in_limit=True, byok_usage_monthly=1, limit_remaining=17.5)
+    assert openrouter_limits(credits, key, now)[1]["value"] == "$2.50/$20"
     assert openrouter_limits({"total_credits": 0, "total_usage": 0}, {"limit": None, "usage": 0}, now) == [
         {"name": "Credits", "used": 100, "resets": None, "value": "$0.00 left"}]
     print("ok")
