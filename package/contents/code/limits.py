@@ -172,15 +172,16 @@ def openrouter(_):
 
 def openrouter_limits(credits, key, now):
     """Money, not a plan: "used" still drives the bar, "value" is what the label shows instead of a percent."""
-    def bar(name, total, spent, resets=None):
-        return {"name": name, "used": round(100 * spent / total, 1) if total else 100, "resets": resets,
-                "value": f"${max(0, total - spent):.2f}"}
-    out = [bar("Credits", credits["total_credits"], credits["total_usage"])]
+    def bar(name, total, spent, value, resets=None):
+        return {"name": name, "used": round(100 * spent / total, 1) if total else 100, "resets": resets, "value": value}
+    total, spent = credits["total_credits"], credits["total_usage"]
+    out = [bar("Credits", total, spent, f"${max(0, total - spent):.2f} left")]
     reset = key.get("limit_reset")  # daily / weekly / monthly / None
     if key.get("limit"):
         period = {"daily": "day", "weekly": "week", "monthly": "month"}.get(reset)
-        out.append(bar(f"Key this {period}" if period else "Key limit", key["limit"],
-                       key.get(f"usage_{reset}", key["usage"]) if period else key["usage"], next_reset(period, now)))
+        used = key.get(f"usage_{reset}", key["usage"]) if period else key["usage"]
+        out.append(bar(f"Key this {period}" if period else "Key limit", key["limit"], used,
+                       f"${used:.2f}/${key['limit']:g}", next_reset(period, now)))
     return out
 
 
@@ -236,10 +237,10 @@ def selfcheck():
     credits = {"total_credits": 20, "total_usage": 4.9}
     key = {"limit": 20, "limit_reset": "monthly", "usage": 4.9, "usage_monthly": 1.5}
     assert openrouter_limits(credits, key, now) == [
-        {"name": "Credits", "used": 24.5, "resets": None, "value": "$15.10"},
-        {"name": "Key this month", "used": 7.5, "resets": next_reset("month", now), "value": "$18.50"}]
+        {"name": "Credits", "used": 24.5, "resets": None, "value": "$15.10 left"},
+        {"name": "Key this month", "used": 7.5, "resets": next_reset("month", now), "value": "$1.50/$20"}]
     assert openrouter_limits({"total_credits": 0, "total_usage": 0}, {"limit": None, "usage": 0}, now) == [
-        {"name": "Credits", "used": 100, "resets": None, "value": "$0.00"}]
+        {"name": "Credits", "used": 100, "resets": None, "value": "$0.00 left"}]
     print("ok")
 
 

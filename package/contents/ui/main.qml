@@ -43,7 +43,7 @@ PlasmoidItem {
 
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground  // on the desktop the black card is the background
     toolTipMainText: "Leftovers"
-    toolTipSubText: all.map(l => `${l.provider}${root.reveal && l.account ? ` (${l.account})` : ""} ${l.name}: ${l.value || `${Math.round(100 - l.used)}%`} left`).join("\n")
+    toolTipSubText: all.map(l => `${l.provider}${root.reveal && l.account ? ` (${l.account})` : ""} ${l.name}: ${l.value || `${Math.round(100 - l.used)}% left`}`).join("\n")
 
     P5Support.DataSource {
         id: exec
