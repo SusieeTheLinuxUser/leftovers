@@ -9,6 +9,8 @@ A KDE Plasma 6 widget that shows how much of your AI coding plans you have left,
 | Claude | `~/.claude/.credentials.json` | Session, Weekly, Weekly Opus/Sonnet |
 | Codex | `~/.codex/auth.json` (falls back to session logs) | Session, Weekly / Monthly |
 | Grok Build | `~/.grok/auth.json` | Weekly credits |
+| Antigravity | T3 Code's Antigravity login (`~/.t3/userdata/providers/antigravity/`) | Gemini, Claude & GPT |
+| OpenRouter | opencode's saved key, or `OPENROUTER_API_KEY` | Credits left, key budget (in $) |
 
 **Multiple accounts:** every config dir is an account. Anything matching `~/.claude*/` or `~/.codex*/`
 is picked up automatically, so `CLAUDE_CONFIG_DIR=~/.claude_work claude` or `CODEX_HOME=~/.codex-work codex`
@@ -39,7 +41,7 @@ kpackagetool6 -t Plasma/Applet -i leftovers/package   # -u to upgrade
 
 Then add **Leftovers** to a panel or the desktop. Needs `python3`, no other dependencies.
 
-Debug the data side with `python3 package/contents/code/limits.py`.
+Debug the data side with `python3 package/contents/code/limits.py` (`--check` runs its self-test).
 
 ## License
 

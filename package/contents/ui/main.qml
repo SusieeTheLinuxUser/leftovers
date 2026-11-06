@@ -12,7 +12,7 @@ PlasmoidItem {
     property var providers: []
     property real now: Date.now()
     readonly property string script: Qt.resolvedUrl("../code/limits.py").toString().replace("file://", "")
-    readonly property var tints: ({ Claude: "#d97757", Codex: "#ffffff", Grok: "#a1a1aa" })
+    readonly property var tints: ({ Claude: "#d97757", Codex: "#ffffff", Grok: "#a1a1aa", Antigravity: "#4c8bf5", OpenRouter: "#8b8ff8" })
     // QML hands JSON arrays back as list types without flatMap, hence the plain loop.
     // A reset that already passed means the numbers are stale until the next fetch: count it as unused, like Bar.
     readonly property var all: {
@@ -43,7 +43,7 @@ PlasmoidItem {
 
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground  // on the desktop the black card is the background
     toolTipMainText: "Leftovers"
-    toolTipSubText: all.map(l => `${l.provider}${root.reveal && l.account ? ` (${l.account})` : ""} ${l.name}: ${Math.round(100 - l.used)}% left`).join("\n")
+    toolTipSubText: all.map(l => `${l.provider}${root.reveal && l.account ? ` (${l.account})` : ""} ${l.name}: ${l.value || `${Math.round(100 - l.used)}% left`}`).join("\n")
 
     P5Support.DataSource {
         id: exec
@@ -244,6 +244,7 @@ PlasmoidItem {
                             resets: modelData.resets
                             tint: provider.tint
                             tickets: index === 0 ? provider.account.tickets || 0 : 0  // once per account
+                            value: modelData.value || ""
                             now: root.now
                         }
                     }
@@ -251,7 +252,7 @@ PlasmoidItem {
             }
             Text {
                 visible: root.providers.length === 0
-                text: "Log in to claude, codex or grok in a terminal and they'll show up here."
+                text: "Log in to claude, codex, grok, T3 Code's Antigravity or opencode's OpenRouter and they'll show up here."
                 color: "#a3a3a3"
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true

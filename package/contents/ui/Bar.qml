@@ -9,6 +9,7 @@ ColumnLayout {
     property var resets  // epoch seconds, null while the window hasn't started
     property color tint
     property int tickets  // free resets the provider gave you
+    property string value  // shown instead of the percentage, e.g. "$15.10" for money
     property real now: Date.now()
 
     readonly property real secs: resets ? resets - now / 1000 : 0
@@ -41,7 +42,7 @@ ColumnLayout {
             font: Kirigami.Theme.smallFont
         }
         Text {
-            text: bar.remaining <= 0 ? "empty" : `${Math.round(bar.remaining)}%`
+            text: bar.value || (bar.remaining <= 0 ? "empty" : `${Math.round(bar.remaining)}%`)
             color: bar.remaining <= 10 ? "#ff5c5c" : "#f5f5f5"
             font.weight: Font.DemiBold
             font.features: { "tnum": 1 }

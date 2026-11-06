@@ -9,10 +9,13 @@ import glob
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
+import sys
 import time
+import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 HOME = os.path.expanduser("~")
 NAMES = {300: "Session", 10080: "Weekly", 43200: "Monthly"}
@@ -109,6 +112,91 @@ def grok(d):
                                     "used": data["creditUsagePercent"], "resets": ts(data["currentPeriod"]["end"])}]
 
 
+def antigravity(d):
+    # Google never rotates refresh tokens, so minting an access token here can't log Antigravity out.
+    creds = json.load(open(f"{d}/acp_token.json"))
+    body = urllib.parse.urlencode({"client_id": creds["client_id"], "client_secret": creds["client_secret"],
+                                   "refresh_token": creds["refresh_token"], "grant_type": "refresh_token"}).encode()
+    try:
+        login = json.load(urllib.request.urlopen(creds["token_uri"], body, timeout=15))
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("login expired, open Antigravity once to refresh it") from e
+
+    def call(method, payload):
+        request = urllib.request.Request(f"https://cloudcode-pa.googleapis.com/v1internal:{method}",
+                                         json.dumps(payload).encode(), {
+            "Authorization": "Bearer " + login["access_token"], "Content-Type": "application/json",
+            "User-Agent": "antigravity"})
+        return json.load(urllib.request.urlopen(request, timeout=15))
+
+    project = call("loadCodeAssist", {"metadata": {"ideType": "ANTIGRAVITY"}}).get("cloudaicompanionProject")
+    models = call("fetchAvailableModels", {"project": project or creds.get("project_id")})["models"]
+    return jwt(login["id_token"]).get("email", ""), antigravity_limits(models)
+
+
+def antigravity_limits(models):
+    """Gemini and the other vendors' models (Claude, GPT-OSS) have separate quotas: one bar each, from the
+    model with the least left. A model with no remainingFraction has none left."""
+    groups = {}
+    for key, m in models.items():
+        q = m.get("quotaInfo")
+        if not q or not m.get("displayName"):
+            continue  # tab_*/chat_* are completion internals, not models you pick
+        name = "Gemini" if key.startswith("gemini") else "Claude & GPT"
+        used = 100 * (1 - q.get("remainingFraction", 0))
+        if name not in groups or used > groups[name]["used"]:
+            groups[name] = {"name": name, "used": round(used, 1), "resets": ts(q.get("resetTime"))}
+    return [groups[n] for n in ("Gemini", "Claude & GPT") if n in groups]
+
+
+def openrouter_key():
+    """opencode keeps the key it uses in its database (its auth.json copy can be an old dead one)."""
+    if os.environ.get("OPENROUTER_API_KEY"):
+        return os.environ["OPENROUTER_API_KEY"]
+    db = f"{HOME}/.local/share/opencode/opencode.db"
+    if not os.path.exists(db):
+        raise FileNotFoundError(db)
+    row = sqlite3.connect(f"file:{db}?mode=ro", uri=True).execute(
+        "SELECT value FROM credential WHERE integration_id = 'openrouter' AND active ORDER BY time_updated DESC").fetchone()
+    if not row:
+        raise FileNotFoundError("no OpenRouter key in opencode")
+    return json.loads(row[0])["key"]
+
+
+def openrouter(_):
+    headers = {"Authorization": "Bearer " + openrouter_key()}
+    credits = get("https://openrouter.ai/api/v1/credits", headers)["data"]
+    key = get("https://openrouter.ai/api/v1/key", headers)["data"]
+    return "", openrouter_limits(credits, key, time.time())
+
+
+def openrouter_limits(credits, key, now):
+    """Money, not a plan: "used" still drives the bar, "value" is what the label shows instead of a percent."""
+    def bar(name, total, spent, value, resets=None):
+        return {"name": name, "used": round(100 * spent / total, 1) if total else 100, "resets": resets, "value": value}
+    total, spent = credits["total_credits"], credits["total_usage"]
+    out = [bar("Credits", total, spent, f"${max(0, total - spent):.2f} left")]
+    reset = key.get("limit_reset")  # daily / weekly / monthly / None
+    if key.get("limit"):
+        period = {"daily": "day", "weekly": "week", "monthly": "month"}.get(reset)
+        used = key.get(f"usage_{reset}", key["usage"]) if period else key["usage"]
+        out.append(bar(f"Key this {period}" if period else "Key limit", key["limit"], used,
+                       f"${used:.2f}/${key['limit']:g}", next_reset(period, now)))
+    return out
+
+
+def next_reset(period, now):
+    """OpenRouter resets key limits at midnight UTC (Mondays for weekly, the 1st for monthly)."""
+    if not period:
+        return None
+    t = datetime.fromtimestamp(now, timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    if period == "day":
+        return (t + timedelta(days=1)).timestamp()
+    if period == "week":
+        return (t + timedelta(days=7 - t.weekday())).timestamp()
+    return (t.replace(day=1) + timedelta(days=32)).replace(day=1).timestamp()
+
+
 def t3(driver, *keys):
     """Account dirs set up as provider instances in T3 Code (Settings > Providers)."""
     try:
@@ -127,9 +215,38 @@ PROVIDERS = (
                       # ChatGPT accounts added with T3 Code's own login button
                       *glob.glob(f"{HOME}/.t3/userdata/providers/codex/*/shadow/")]),
     ("Grok", grok, [f"{HOME}/.grok"]),
+    # T3 Code's Antigravity provider keeps its Google login here.
+    ("Antigravity", antigravity, glob.glob(f"{HOME}/.t3/userdata/providers/antigravity/*/antigravity-acp/")),
+    ("OpenRouter", openrouter, ["openrouter"]),  # one account, found by openrouter_key()
 )
 
-if __name__ == "__main__":
+
+def selfcheck():
+    """python3 limits.py --check: the parsing, on canned API answers."""
+    models = {"gemini-3-flash": {"displayName": "Gemini 3 Flash", "quotaInfo": {"resetTime": "2026-11-09T22:29:34Z"}},
+              "gemini-2.5-pro": {"displayName": "Gemini 2.5 Pro", "quotaInfo": {"remainingFraction": 0.5}},
+              "claude-opus-4-6-thinking": {"displayName": "Claude Opus", "quotaInfo": {"remainingFraction": 0.75}},
+              "tab_flash_lite_preview": {"quotaInfo": {"remainingFraction": 0}}}
+    assert antigravity_limits(models) == [{"name": "Gemini", "used": 100.0, "resets": ts("2026-11-09T22:29:34Z")},
+                                          {"name": "Claude & GPT", "used": 25.0, "resets": None}]
+    now = datetime(2026, 11, 6, 18, 30, tzinfo=timezone.utc).timestamp()  # a Friday
+    assert next_reset("day", now) == datetime(2026, 11, 7, tzinfo=timezone.utc).timestamp()
+    assert next_reset("week", now) == datetime(2026, 11, 9, tzinfo=timezone.utc).timestamp()
+    assert next_reset("month", datetime(2026, 12, 31, tzinfo=timezone.utc).timestamp()) == \
+        datetime(2027, 1, 1, tzinfo=timezone.utc).timestamp()
+    credits = {"total_credits": 20, "total_usage": 4.9}
+    key = {"limit": 20, "limit_reset": "monthly", "usage": 4.9, "usage_monthly": 1.5}
+    assert openrouter_limits(credits, key, now) == [
+        {"name": "Credits", "used": 24.5, "resets": None, "value": "$15.10 left"},
+        {"name": "Key this month", "used": 7.5, "resets": next_reset("month", now), "value": "$1.50/$20"}]
+    assert openrouter_limits({"total_credits": 0, "total_usage": 0}, {"limit": None, "usage": 0}, now) == [
+        {"name": "Credits", "used": 100, "resets": None, "value": "$0.00 left"}]
+    print("ok")
+
+
+if __name__ == "__main__" and "--check" in sys.argv:
+    selfcheck()
+elif __name__ == "__main__":
     CACHE = f"{HOME}/.cache/leftovers.json"
     try:
         cache = json.load(open(CACHE))
