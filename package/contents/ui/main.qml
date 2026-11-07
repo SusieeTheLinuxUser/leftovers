@@ -12,6 +12,8 @@ PlasmoidItem {
     property var providers: []
     property real now: Date.now()
     readonly property string script: Qt.resolvedUrl("../code/limits.py").toString().replace("file://", "")
+    readonly property var hidden: Plasmoid.configuration.hiddenProviders || []  // unticked in Configure…
+    readonly property string command: `python3 '${script}'` + (hidden.length > 0 ? ` --skip '${hidden.join(",")}'` : "")
     readonly property var tints: ({ Claude: "#d97757", Codex: "#ffffff", Grok: "#a1a1aa", Antigravity: "#4c8bf5", OpenRouter: "#8b8ff8" })
     // QML hands JSON arrays back as list types without flatMap, hence the plain loop.
     // A reset that already passed means the numbers are stale until the next fetch: count it as unused, like Bar.
@@ -40,6 +42,17 @@ PlasmoidItem {
     property var picks: ({})  // provider name -> account index, kept on root so refreshes don't reset it
 
     function tint(name) { return tints[name] || "#a3a3a3" }
+    function fetch() { exec.connectSource(command) }
+
+    onCommandChanged: {
+        // Configure… changed the hidden list: drop those providers right away and re-fetch.
+        const shown = []
+        for (const p of providers)
+            if (!hidden.includes(p.name))
+                shown.push(p)
+        providers = shown
+        fetch()
+    }
 
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground  // on the desktop the black card is the background
     toolTipMainText: "Leftovers"
@@ -50,6 +63,7 @@ PlasmoidItem {
         engine: "executable"
         onNewData: (source, data) => {
             disconnectSource(source)
+            if (source !== root.command) return  // a fetch from before Configure… changed the hidden list
             try {
                 root.providers = JSON.parse(data.stdout).providers
             } catch (e) {
@@ -64,7 +78,7 @@ PlasmoidItem {
         running: true
         repeat: true
         triggeredOnStart: true
-        onTriggered: exec.connectSource(`python3 '${root.script}'`)
+        onTriggered: root.fetch()
     }
     Timer {
         interval: 30 * 1000
@@ -252,7 +266,8 @@ PlasmoidItem {
             }
             Text {
                 visible: root.providers.length === 0
-                text: "Log in to claude, codex, grok, T3 Code's Antigravity or opencode's OpenRouter and they'll show up here."
+                text: root.hidden.length >= 5 ? "All providers are hidden. Right-click → Configure Leftovers… to show some."
+                     : "Log in to claude, codex, grok, T3 Code's Antigravity or opencode's OpenRouter and they'll show up here."
                 color: "#a3a3a3"
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true

@@ -207,6 +207,14 @@ def t3(driver, *keys):
             for k in keys if i.get("config", {}).get(k)]
 
 
+def skipped(argv):
+    """Provider names after a --skip arg (comma separated); their logins and APIs are never touched."""
+    for i, a in enumerate(argv):
+        if a == "--skip" and i + 1 < len(argv):
+            return {s for s in argv[i + 1].split(",") if s}
+    return set()
+
+
 PROVIDERS = (
     ("Claude", claude, [os.environ.get("CLAUDE_CONFIG_DIR", ""), f"{HOME}/.claude", *glob.glob(f"{HOME}/.claude?*/"),
                         *t3("claudeAgent", "homePath")]),
@@ -243,6 +251,9 @@ def selfcheck():
     assert openrouter_limits(credits, key, now)[1]["value"] == "$2.50/$20"
     assert openrouter_limits({"total_credits": 0, "total_usage": 0}, {"limit": None, "usage": 0}, now) == [
         {"name": "Credits", "used": 100, "resets": None, "value": "$0.00 left"}]
+    assert skipped(["limits.py", "--skip", "Grok,Codex"]) == {"Grok", "Codex"}
+    assert skipped(["limits.py"]) == set()
+    assert skipped(["limits.py", "--skip", ""]) == set()
     print("ok")
 
 
@@ -255,7 +266,10 @@ elif __name__ == "__main__":
     except (FileNotFoundError, ValueError):
         cache = {}
     result = {"providers": []}
+    skip = skipped(sys.argv)
     for name, fetch, dirs in PROVIDERS:
+        if name in skip:
+            continue  # unticked in the widget's Configure…: not even its login gets read
         for d in dict.fromkeys(os.path.normpath(d) for d in dirs if d):  # dedupe, keep order
             key = f"{name}:{d}"
             try:

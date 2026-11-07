@@ -6,6 +6,10 @@ Handoff notes for coding agents. User-facing docs are in README.md.
 - `package/contents/code/limits.py`: reads each CLI's saved login, calls the usage APIs, prints JSON
   (`{"providers": [{name, account, limits: [{name, used, resets, value?}], tickets?, error?}]}`).
   Python stdlib only. Never rotates saved logins (Antigravity only mints a short-lived Google access token).
+  `--skip Name,Name` skips providers entirely (main.qml passes the ones hidden in Configure…).
+- `package/contents/config/main.xml` + `package/contents/config/config.qml`: the `hiddenProviders`
+  setting (KConfigXT) and the Configure… page list.
+- `package/contents/ui/configGeneral.qml`: one checkbox per provider; unticked ones are not fetched or shown.
 - `package/contents/ui/main.qml`: runs `limits.py` every 5 min, picks the lowest limit for the panel,
   draws the card with one section per provider and ‹ › to flip accounts.
 - `package/contents/ui/Bar.qml`: one limit row (label, reset countdown, % or `value`, bar).
