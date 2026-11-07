@@ -14,7 +14,9 @@ Handoff notes for coding agents. User-facing docs are in README.md.
 - `HOME=/nonexistent python3 package/contents/code/limits.py --check` is the self-test. It uses canned
   answers, and the fake HOME keeps it from even listing account dirs.
   Add an assert there when you change the parsing.
-- A plain `python3 package/contents/code/limits.py` hits the real accounts. Only the main agent may run it, never a subagent.
+- A plain `python3 package/contents/code/limits.py` hits the real accounts. Only the main agent may run it,
+  never a subagent, and only with the emails stripped:
+  `... | python3 -c "import json,sys; d=json.load(sys.stdin); [p.pop('account') for p in d['providers']]; print(d)"`
 
 ## Privacy
 - The script reads real API keys, OAuth tokens and emails. Subagents only read the repo code: they never
