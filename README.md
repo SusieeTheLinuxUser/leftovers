@@ -29,6 +29,8 @@ against an edge and it fills the gap and squares off those corners.
 The panel shows the limit closest to running out. Logins are only read, never refreshed: if one expired,
 open that CLI once and the widget catches up on its next poll (every 5 minutes).
 
+Hide the providers you don't use in the widget's **Configure…** dialog; hidden ones aren't fetched at all.
+
 ## Install
 
 In Plasma: **Add Widgets → Get New Widgets → Download New Plasma Widgets**, search for **Leftovers**
