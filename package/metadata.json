@@ -7,7 +7,7 @@
         "Authors": [{ "Name": "Susiee" }],
         "License": "MIT",
         "Website": "https://github.com/SusieeTheLinuxUser/leftovers",
-        "Version": "0.5"
+        "Version": "0.6"
     },
     "KPackageStructure": "Plasma/Applet",
     "X-Plasma-API-Minimum-Version": "6.0"
