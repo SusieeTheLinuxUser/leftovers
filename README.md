@@ -37,13 +37,16 @@ In Plasma: **Add Widgets → Get New Widgets → Download New Plasma Widgets**, 
 ([KDE Store page](https://www.opendesktop.org/p/2380570/)). Or from source:
 
 ```sh
-git clone https://github.com/SusieeTheLinuxUser/leftovers
-kpackagetool6 -t Plasma/Applet -i leftovers/package   # -u to upgrade
+git clone https://github.com/SusieeTheLinuxUser/leftovers && cd leftovers
+cargo build --release
+install -Dm755 target/release/leftovers package/contents/bin/leftovers
+kpackagetool6 -t Plasma/Applet -i package   # -u to upgrade
 ```
 
-Then add **Leftovers** to a panel or the desktop. Needs `python3`, no other dependencies.
+Then add **Leftovers** to a panel or the desktop. The store package has a ready-made x86_64 Linux build
+(no Python or other dependencies); on other CPUs, build from source as above (needs [Rust](https://rustup.rs)).
 
-Debug the data side with `python3 package/contents/code/limits.py` (`--check` runs its self-test).
+Debug the data side with `target/release/leftovers` (it prints the JSON the widget draws); `cargo test` runs the parser tests.
 
 ## License
 

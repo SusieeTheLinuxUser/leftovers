@@ -1,5 +1,5 @@
 //! Prints AI coding plan usage limits as JSON, using the logins their CLIs already saved.
-//! Rust port of package/contents/code/limits.py (same JSON on stdout, same ~/.cache/leftovers.json).
+//! Ported from the old limits.py (same JSON on stdout, same ~/.cache/leftovers.json).
 //!
 //! Every account is a config dir: ~/.claude, ~/.claude_work (CLAUDE_CONFIG_DIR), ~/.codex, ~/.codex-2 (CODEX_HOME)...
 //! Tokens are never refreshed here: that could race the CLI's own token rotation and log you out.

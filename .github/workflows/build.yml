@@ -1,0 +1,35 @@
+# Builds the static x86_64 helper and the .plasmoid the KDE Store gets (artifact on every run, release asset on tags).
+name: build
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y musl-tools
+      - run: rustup target add x86_64-unknown-linux-musl && rustup component add clippy
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - run: cargo build --release --target x86_64-unknown-linux-musl
+      - name: Package
+        run: |
+          install -Dm755 target/x86_64-unknown-linux-musl/release/leftovers package/contents/bin/leftovers
+          file package/contents/bin/leftovers | grep -Eq 'static(-pie|ally) linked'
+          HOME=$(mktemp -d) package/contents/bin/leftovers | grep -q '"providers"'
+          version=$(jq -r .KPlugin.Version package/metadata.json)
+          (cd package && zip -qr "../leftovers-$version.plasmoid" .)
+          echo "PLASMOID=leftovers-$version.plasmoid" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plasmoid
+          path: ${{ env.PLASMOID }}
+      - if: startsWith(github.ref, 'refs/tags/v')
+        run: gh release create "$GITHUB_REF_NAME" "$PLASMOID" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

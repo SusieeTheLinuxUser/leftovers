@@ -1,6 +1,6 @@
 [package]
 name = "leftovers"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 description = "Prints AI coding plan usage limits as JSON for the leftovers KDE widget"
 license = "MIT"
