@@ -1,2 +1,4 @@
 __pycache__/
 *.plasmoid
+/target
+/package/contents/bin/
