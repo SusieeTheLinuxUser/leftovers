@@ -108,8 +108,16 @@ def grok(d):
     fresh(ts(auth["expires_at"]), "grok")
     data = get("https://cli-chat-proxy.grok.com/v1/billing?format=credits",
                {"Authorization": "Bearer " + auth["key"]})["config"]
-    return auth.get("email", ""), [{"name": "Weekly" if "WEEKLY" in data["currentPeriod"]["type"] else "Credits",
-                                    "used": data["creditUsagePercent"], "resets": ts(data["currentPeriod"]["end"])}]
+    return auth.get("email", ""), grok_limits(data)
+
+
+def grok_limits(data):
+    # A lapsed plan still answers, but with no creditUsagePercent: nothing to show.
+    if "creditUsagePercent" not in data:
+        return []
+    period = data.get("currentPeriod") or {}
+    return [{"name": "Weekly" if "WEEKLY" in period.get("type", "") else "Credits",
+             "used": data["creditUsagePercent"], "resets": ts(period.get("end"))}]
 
 
 def antigravity(d):
@@ -207,6 +215,11 @@ def t3(driver, *keys):
             for k in keys if i.get("config", {}).get(k)]
 
 
+def why(name, e):
+    """Short error text for the widget; a bare KeyError would just print the missing key in quotes."""
+    return f"{name} changed its usage page (no {e.args[0]})" if isinstance(e, KeyError) else str(e)
+
+
 def skipped(argv):
     """Provider names after a --skip arg (comma separated); their logins and APIs are never touched."""
     for i, a in enumerate(argv):
@@ -251,6 +264,13 @@ def selfcheck():
     assert openrouter_limits(credits, key, now)[1]["value"] == "$2.50/$20"
     assert openrouter_limits({"total_credits": 0, "total_usage": 0}, {"limit": None, "usage": 0}, now) == [
         {"name": "Credits", "used": 100, "resets": None, "value": "$0.00 left"}]
+    lapsed = {"currentPeriod": {"type": "USAGE_PERIOD_TYPE_WEEKLY", "end": "2026-11-14T18:59:33.334+00:00"},
+              "prepaidBalance": {"val": 0}}  # real shape after the plan ended, 2026-11-08
+    assert grok_limits(lapsed) == []
+    assert grok_limits({**lapsed, "creditUsagePercent": 40.0}) == [
+        {"name": "Weekly", "used": 40.0, "resets": ts("2026-11-14T18:59:33.334+00:00")}]
+    assert why("Grok", KeyError("creditUsagePercent")) == "Grok changed its usage page (no creditUsagePercent)"
+    assert why("Codex", RuntimeError("login expired")) == "login expired"
     assert skipped(["limits.py", "--skip", "Grok,Codex"]) == {"Grok", "Codex"}
     assert skipped(["limits.py"]) == set()
     assert skipped(["limits.py", "--skip", ""]) == set()
@@ -277,13 +297,15 @@ elif __name__ == "__main__":
                 # The Codex session-log fallback has no count: keep the last one rather than hide it.
                 cache[key] = {"account": account, "limits": limits,
                               "tickets": tickets[0] if tickets else cache.get(key, {}).get("tickets", 0)}
-                result["providers"].append({"name": name, **cache[key]})
+                # No limits at all (e.g. the plan lapsed): say so instead of an empty card. Cache keeps [] so
+                # an old bar never comes back as "last known numbers".
+                result["providers"].append({"name": name, **cache[key], **({} if limits else {"error": "no active plan"})})
             except FileNotFoundError:
                 pass  # not installed / not an account dir: just don't show it
             except Exception as e:
                 # Usage endpoints rate-limit (429); last good numbers still count down correctly.
                 last = cache.get(key, {"account": "", "limits": []})
-                result["providers"].append({"name": name, **last, "error": str(e)})
+                result["providers"].append({"name": name, **last, "error": why(name, e)})
     os.makedirs(os.path.dirname(CACHE), exist_ok=True)
     json.dump(cache, open(CACHE, "w"))
     print(json.dumps(result))

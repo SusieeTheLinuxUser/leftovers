@@ -41,6 +41,14 @@ Handoff notes for coding agents. User-facing docs are in README.md.
 - T3 `~/.t3/userdata/settings.json`: `providerInstances` is a dict, and some instances have no
   `config` key at all.
 
+- Grok `cli-chat-proxy.grok.com/v1/billing?format=credits` (checked 2026-11-08): `config.creditUsagePercent`
+  plus `currentPeriod` {type, end}. After the plan lapsed, `creditUsagePercent` is gone (only
+  `currentPeriod`, `prepaidBalance`, billing dates): `grok_limits` returns [] and the widget says "no active plan".
+
+## Errors
+- A provider that returns no limits gets `error: "no active plan"` and its cache becomes [] (no stale bar).
+- `why()` turns a KeyError into "<Provider> changed its usage page (no <key>)" for every provider.
+
 ## Git
 - GitHub commits must be by `96988330+SusieeTheLinuxUser@users.noreply.github.com`: check
   `git log --format=%ae origin/main..HEAD` before pushing. The owner merges PRs.
