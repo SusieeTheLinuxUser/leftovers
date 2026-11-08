@@ -11,9 +11,10 @@ PlasmoidItem {
     id: root
     property var providers: []
     property real now: Date.now()
-    readonly property string script: Qt.resolvedUrl("../code/limits.py").toString().replace("file://", "")
+    readonly property string helper: Qt.resolvedUrl("../bin/leftovers").toString().replace("file://", "")
     readonly property var hidden: Plasmoid.configuration.hiddenProviders || []  // unticked in Configure…
-    readonly property string command: `python3 '${script}'` + (hidden.length > 0 ? ` --skip '${hidden.join(",")}'` : "")
+    // "|| exit" forces a shell: run directly, a binary for another CPU fails silently and never reports back.
+    readonly property string command: `'${helper}'` + (hidden.length > 0 ? ` --skip '${hidden.join(",")}'` : "") + " || exit"
     readonly property var tints: ({ Claude: "#d97757", Codex: "#ffffff", Grok: "#a1a1aa", Antigravity: "#4c8bf5", OpenRouter: "#8b8ff8" })
     // QML hands JSON arrays back as list types without flatMap, hence the plain loop.
     // A reset that already passed means the numbers are stale until the next fetch: count it as unused, like Bar.
@@ -38,6 +39,7 @@ PlasmoidItem {
         }
         return out
     }
+    property string failure: ""  // the helper didn't run or printed no JSON
     property bool reveal: false  // emails stay blurred until clicked
     property var picks: ({})  // provider name -> account index, kept on root so refreshes don't reset it
 
@@ -56,7 +58,7 @@ PlasmoidItem {
 
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground  // on the desktop the black card is the background
     toolTipMainText: "Leftovers"
-    toolTipSubText: all.map(l => `${l.provider}${root.reveal && l.account ? ` (${l.account})` : ""} ${l.name}: ${l.value || `${Math.round(Math.max(0, 100 - l.used))}% left`}`).join("\n")
+    toolTipSubText: failure || all.map(l => `${l.provider}${root.reveal && l.account ? ` (${l.account})` : ""} ${l.name}: ${l.value || `${Math.round(Math.max(0, 100 - l.used))}% left`}`).join("\n")
 
     P5Support.DataSource {
         id: exec
@@ -66,7 +68,12 @@ PlasmoidItem {
             if (source !== root.command) return  // a fetch from before Configure… changed the hidden list
             try {
                 root.providers = JSON.parse(data.stdout).providers
+                root.failure = ""
             } catch (e) {
+                // 126/127: the shell couldn't run the binary (missing, or built for another CPU).
+                root.failure = [126, 127].includes(data["exit code"])
+                    ? "Leftovers' helper can't run here: the store package only has an x86_64 Linux build. Build it from source: github.com/SusieeTheLinuxUser/leftovers"
+                    : `Leftovers' helper failed: ${data.stderr.trim() || "no output"}`
                 console.warn("leftovers:", data.stderr)
             }
         }
@@ -266,7 +273,8 @@ PlasmoidItem {
             }
             Text {
                 visible: root.providers.length === 0
-                text: root.hidden.length >= 5 ? "All providers are hidden. Right-click → Configure Leftovers… to show some."
+                text: root.failure ? root.failure
+                     : root.hidden.length >= 5 ? "All providers are hidden. Right-click → Configure Leftovers… to show some."
                      : "Log in to claude, codex, grok, T3 Code's Antigravity or opencode's OpenRouter and they'll show up here."
                 color: "#a3a3a3"
                 wrapMode: Text.Wrap
