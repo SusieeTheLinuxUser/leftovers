@@ -2,6 +2,7 @@
 name = "leftovers"
 version = "0.7.0"
 edition = "2021"
+rust-version = "1.89"  # rusqlite needs it
 description = "Prints AI coding plan usage limits as JSON for the leftovers KDE widget"
 license = "MIT"
 
