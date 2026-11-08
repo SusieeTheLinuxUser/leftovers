@@ -73,7 +73,9 @@ def claude(d):
 
 
 def codex(d):
-    tokens = json.load(open(f"{d}/auth.json"))["tokens"]
+    tokens = json.load(open(f"{d}/auth.json")).get("tokens")
+    if not tokens:
+        raise FileNotFoundError("API key login: no ChatGPT plan to show")
     email = jwt(tokens["id_token"]).get("email", "")
     try:
         fresh(jwt(tokens["access_token"])["exp"], "codex")
@@ -274,6 +276,14 @@ def selfcheck():
     assert why("Codex", RuntimeError("login expired")) == "login expired"
     assert skipped(["limits.py", "--skip", "Grok,Codex"]) == {"Grok", "Codex"}
     assert skipped(["limits.py"]) == set()
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:  # codex login with an API key: no plan, hide it
+        json.dump({"OPENAI_API_KEY": "sk-test", "tokens": None}, open(f"{d}/auth.json", "w"))
+        try:
+            codex(d)
+            raise AssertionError("API key login should be hidden")
+        except FileNotFoundError:
+            pass
     assert skipped(["limits.py", "--skip", ""]) == set()
     print("ok")
 
@@ -308,5 +318,8 @@ elif __name__ == "__main__":
                 last = cache.get(key, {"account": "", "limits": []})
                 result["providers"].append({"name": name, **last, "error": why(name, e)})
     os.makedirs(os.path.dirname(CACHE), exist_ok=True)
-    json.dump(cache, open(CACHE, "w"))
+    # Write then rename: a second widget reading mid-write would see half a file and drop the whole cache.
+    with open(f"{CACHE}.{os.getpid()}", "w") as f:
+        json.dump(cache, f)
+    os.replace(f"{CACHE}.{os.getpid()}", CACHE)
     print(json.dumps(result))
