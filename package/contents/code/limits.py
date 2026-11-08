@@ -217,7 +217,7 @@ def t3(driver, *keys):
 
 def why(name, e):
     """Short error text for the widget; a bare KeyError would just print the missing key in quotes."""
-    return f"{name} changed its usage page (no {e.args[0]})" if isinstance(e, KeyError) else str(e)
+    return f"{name} changed its usage page (no {str(e).strip(chr(39))})" if isinstance(e, KeyError) else str(e)
 
 
 def skipped(argv):
@@ -270,6 +270,7 @@ def selfcheck():
     assert grok_limits({**lapsed, "creditUsagePercent": 40.0}) == [
         {"name": "Weekly", "used": 40.0, "resets": ts("2026-11-14T18:59:33.334+00:00")}]
     assert why("Grok", KeyError("creditUsagePercent")) == "Grok changed its usage page (no creditUsagePercent)"
+    assert why("Grok", KeyError()) == "Grok changed its usage page (no )"
     assert why("Codex", RuntimeError("login expired")) == "login expired"
     assert skipped(["limits.py", "--skip", "Grok,Codex"]) == {"Grok", "Codex"}
     assert skipped(["limits.py"]) == set()
