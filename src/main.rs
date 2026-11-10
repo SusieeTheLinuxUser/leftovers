@@ -367,6 +367,29 @@ fn claude_parse(data: &Value, now: f64) -> Result<(Vec<Value>, i64), Err> {
             limits.push(json!({"name": name, "used": key(v, "utilization")?, "resets": ts(v.get("resets_at"))?}));
         }
     }
+    // `limits` lists every window with its display name, including ones the fixed keys above don't have
+    // (e.g. a model's own weekly bucket during a launch promo: kind "weekly_scoped", scope.model "Fable").
+    // Show each new one, named by the API; `extra` keeps them out of the panel's pick. Odd entries are skipped.
+    for l in data.get("limits").and_then(Value::as_array).into_iter().flatten() {
+        let kind = str_of(l.get("kind"));
+        let Some(used) = l.get("percent").filter(|p| p.is_number()) else { continue };
+        if kind == "session" || kind == "weekly_all" {
+            continue;
+        }
+        let scope: Vec<&str> = ["model", "surface"]
+            .iter()
+            .filter_map(|s| l.get("scope")?.get(s)?.get("display_name")?.as_str())
+            .collect();
+        let words = if scope.is_empty() { kind.replace('_', " ") } else { format!("{} {}", str_of(l.get("group")), scope.join(" ")) };
+        let mut name = words.trim().to_string();
+        if let Some(first) = name.get_mut(..1) {
+            first.make_ascii_uppercase();
+        }
+        if !name.is_empty() && !limits.iter().any(|x| x["name"] == name) {
+            let resets = ts(l.get("resets_at")).ok().flatten();
+            limits.push(json!({"name": name, "used": used, "resets": resets, "extra": true}));
+        }
+    }
     Ok((limits, tickets))
 }
 
@@ -993,6 +1016,45 @@ mod tests {
         assert_eq!(limits[1]["name"], "Weekly Sonnet");
         // a limit without "utilization" is a changed API
         assert_eq!(claude_parse(&json!({"five_hour": {"resets_at": null}}), now), Err(Err::Missing("utilization".into())));
+    }
+
+    #[test]
+    fn claude_promo_buckets() {
+        let now = utc(2026, 11, 10, 0, 0);
+        let base = json!({
+            "five_hour": {"utilization": 70.0, "resets_at": "2026-11-10T00:40:00+00:00"},
+            "seven_day": {"utilization": 52.0, "resets_at": "2026-11-14T19:00:00+00:00"},
+            "seven_day_opus": {"utilization": 5.0, "resets_at": null},
+        });
+        // no `limits` list (or an empty one): only the fixed windows
+        let (plain, _) = claude_parse(&base, now).unwrap();
+        assert_eq!(plain.len(), 3);
+        let mut empty = base.clone();
+        empty["limits"] = json!([]);
+        assert_eq!(claude_parse(&empty, now).unwrap().0, plain);
+
+        // shaped like the real response during the Fable launch (2026-11-10), plus made-up future entries
+        let mut promo = base.clone();
+        promo["limits"] = json!([
+            {"kind": "session", "group": "session", "percent": 70, "resets_at": "2026-11-10T00:40:00+00:00", "scope": null},
+            {"kind": "weekly_all", "group": "weekly", "percent": 52, "resets_at": "2026-11-14T19:00:00+00:00", "scope": null},
+            {"kind": "weekly_scoped", "group": "weekly", "percent": 19, "resets_at": "2026-11-14T18:59:59.653870+00:00",
+             "scope": {"model": {"display_name": "Fable"}, "surface": null}, "is_active": false, "new_field": [1]},
+            {"kind": "weekly_scoped", "group": "weekly", "percent": 5, "scope": {"model": {"display_name": "Opus"}}},
+            {"kind": "launch_bonus", "percent": 3.5, "resets_at": "not a date"},
+            {"kind": "weekly_scoped", "group": "weekly", "scope": {"model": {"display_name": "NoPercent"}}},
+            {"percent": 1},
+            "junk"
+        ]);
+        let (limits, _) = claude_parse(&promo, now).unwrap();
+        assert_eq!(limits[..3], plain[..]); // Weekly Opus not doubled
+        assert_eq!(
+            limits[3..],
+            [
+                json!({"name": "Weekly Fable", "used": 19, "resets": t("2026-11-14T18:59:59.653870+00:00"), "extra": true}),
+                json!({"name": "Launch bonus", "used": 3.5, "resets": null, "extra": true}),
+            ]
+        );
     }
 
     #[test]

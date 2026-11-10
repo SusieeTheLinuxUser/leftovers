@@ -26,8 +26,9 @@ PlasmoidItem {
                                        l.resets && l.resets * 1000 <= now ? { used: 0 } : {}))
         return out
     }
-    // The panel shows whichever limit is closest to running out.
-    readonly property var lowest: all.reduce((a, b) => (!a || b.used > a.used ? b : a), null)
+    // The panel shows whichever limit is closest to running out. `extra` ones (a single model's bucket,
+    // like a launch promo) leave the other models usable, so they don't count.
+    readonly property var lowest: all.filter(l => !l.extra).reduce((a, b) => (!a || b.used > a.used ? b : a), null)
     readonly property real lowestLeft: lowest ? Math.max(0, 100 - lowest.used) : 0
     // One section per provider; extra accounts are flipped through with the arrows.
     readonly property var groups: {
