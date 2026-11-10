@@ -6,7 +6,7 @@ A KDE Plasma 6 widget that shows how much of your AI coding plans you have left,
 
 | Provider | Reads login from | Limits |
 |---|---|---|
-| Claude | `~/.claude/.credentials.json` | Session, Weekly, Weekly Opus/Sonnet |
+| Claude | `~/.claude/.credentials.json` | Session, Weekly, Weekly Opus/Sonnet, plus any extra window Claude reports (e.g. Weekly Fable during a model launch) |
 | Codex | `~/.codex/auth.json` (falls back to session logs) | Session, Weekly / Monthly |
 | Grok Build | `~/.grok/auth.json` | Weekly credits |
 | Antigravity | T3 Code's Antigravity login (`~/.t3/userdata/providers/antigravity/`) | Gemini, Claude & GPT |
@@ -26,7 +26,7 @@ show up without any extra config.
 Account emails are blurred until you click one. On the desktop, push the card into a screen corner or
 against an edge and it fills the gap and squares off those corners.
 
-The panel shows the limit closest to running out. Logins are only read, never refreshed: if one expired,
+The panel shows the limit closest to running out (single-model extras like Weekly Fable don't count there). Logins are only read, never refreshed: if one expired,
 open that CLI once and the widget catches up on its next poll (every 5 minutes).
 
 Hide the providers you don't use in the widget's **Configure…** dialog; hidden ones aren't fetched at all.
