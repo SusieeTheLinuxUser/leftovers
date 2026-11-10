@@ -22,8 +22,9 @@ Handoff notes for coding agents. User-facing docs are in README.md.
 ## Test
 - `CARGO_BUILD_JOBS=2 nice -n 19 cargo clippy --all-targets -- -D warnings && cargo test`: the parsers on
   synthetic fixtures (no real accounts). Add a test when you change the parsing.
-- `env -u CLAUDE_CONFIG_DIR -u CODEX_HOME HOME=/nonexistent target/release/leftovers` must print `{"providers":[]}`.
-  Unset those two: T3 sets `CLAUDE_CONFIG_DIR` in agent shells, and `HOME=/nonexistent` alone still reads that account.
+- `env -u CLAUDE_CONFIG_DIR -u CODEX_HOME -u OPENROUTER_API_KEY HOME=/nonexistent target/release/leftovers` must print `{"providers":[]}`.
+  Unset those three, the only env vars the helper reads logins from: T3 sets `CLAUDE_CONFIG_DIR` in agent shells,
+  and `HOME=/nonexistent` alone still reads that account.
 - A plain `target/release/leftovers` hits the real accounts. Only the main agent may run it,
   never a subagent, and only with the emails stripped:
   `... | jq -c '.providers[] |= del(.account)'`
