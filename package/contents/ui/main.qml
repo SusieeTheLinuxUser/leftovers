@@ -41,6 +41,7 @@ PlasmoidItem {
         return out
     }
     property string failure: ""  // the helper didn't run or printed no JSON
+    property real lastGood: 0  // Date.now() of the last successful parse
     property bool reveal: false  // emails stay blurred until clicked
     property var picks: ({})  // provider name -> account index, kept on root so refreshes don't reset it
 
@@ -70,6 +71,7 @@ PlasmoidItem {
             try {
                 root.providers = JSON.parse(data.stdout).providers
                 root.failure = ""
+                root.lastGood = Date.now()
             } catch (e) {
                 // 126/127: the shell couldn't run the binary (missing, or built for another CPU).
                 root.failure = [126, 127].includes(data["exit code"])
@@ -165,6 +167,15 @@ PlasmoidItem {
             id: content
             anchors { top: parent.top; left: parent.left; right: parent.right; margins: card.pad }
             spacing: Kirigami.Units.largeSpacing
+
+            Text {
+                visible: root.failure !== "" && root.providers.length > 0
+                text: `⚠ last refresh failed · showing numbers from ${Qt.formatTime(new Date(root.lastGood), Locale.ShortFormat)}`
+                color: "#e0a040"
+                font: Kirigami.Theme.smallFont
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
 
             Repeater {
                 model: root.groups

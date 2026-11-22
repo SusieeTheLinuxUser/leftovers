@@ -15,7 +15,7 @@ Handoff notes for coding agents. User-facing docs are in README.md.
 - `package/contents/config/main.xml` + `package/contents/config/config.qml`: the `hiddenProviders`
   setting (KConfigXT) and the Configure… page list.
 - `package/contents/ui/configGeneral.qml`: one checkbox per provider; unticked ones are not fetched or shown.
-- `package/contents/ui/main.qml`: runs `bin/leftovers` every 5 min (shows a clear message if it can't run), picks the lowest limit for the panel,
+- `package/contents/ui/main.qml`: runs `bin/leftovers` every 5 min (shows a clear message if it can't run, or a "⚠ last refresh failed · showing numbers from HH:MM" line above the old bars), picks the lowest limit for the panel,
   draws the card with one section per provider and ‹ › to flip accounts.
 - `package/contents/ui/Bar.qml`: one limit row (label, reset countdown, % or `value`, bar).
 
@@ -25,6 +25,10 @@ Handoff notes for coding agents. User-facing docs are in README.md.
 - `env -u CLAUDE_CONFIG_DIR -u CODEX_HOME -u OPENROUTER_API_KEY HOME=/nonexistent target/release/leftovers` must print `{"providers":[]}`.
   Unset those three, the only env vars the helper reads logins from: T3 sets `CLAUDE_CONFIG_DIR` in agent shells,
   and `HOME=/nonexistent` alone still reads that account.
+- QML: `qmllint package/contents/ui/*.qml` must print nothing. To check QML logic without opening a window
+  (the panel is the user's live one; never reload plasmashell), put it in a small `QtObject` file and run
+  `QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 QT_LOGGING_RULES="*.debug=true;qt.*.debug=false" /usr/lib/qt6/bin/qml t.qml`
+  (without the logging vars, `console.log` prints nothing).
 - A plain `target/release/leftovers` hits the real accounts. Only the main agent may run it,
   never a subagent, and only with the emails stripped:
   `... | jq -c '.providers[] |= del(.account)'`
