@@ -15,7 +15,7 @@ Handoff notes for coding agents. User-facing docs are in README.md.
 - `package/contents/config/main.xml` + `package/contents/config/config.qml`: the `hiddenProviders`
   setting (KConfigXT) and the Configure… page list.
 - `package/contents/ui/configGeneral.qml`: one checkbox per provider; unticked ones are not fetched or shown.
-- `package/contents/ui/main.qml`: runs `bin/leftovers` every 5 min (shows a clear message if it can't run, or a "⚠ last refresh failed · showing numbers from HH:MM" line above the old bars), picks the lowest limit for the panel,
+- `package/contents/ui/main.qml`: runs `bin/leftovers` every 5 min (shows a clear message if it can't run, or a "⚠ last refresh failed · last good one at HH:MM" line above the old bars), picks the lowest limit for the panel,
   draws the card with one section per provider and ‹ › to flip accounts.
 - `package/contents/ui/Bar.qml`: one limit row (label, reset countdown, % or `value`, bar).
 

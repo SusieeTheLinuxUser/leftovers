@@ -170,7 +170,7 @@ PlasmoidItem {
 
             Text {
                 visible: root.failure !== "" && root.providers.length > 0
-                text: `⚠ last refresh failed · showing numbers from ${Qt.formatTime(new Date(root.lastGood), Locale.ShortFormat)}`
+                text: `⚠ last refresh failed · last good one at ${new Date(root.lastGood).toLocaleTimeString(Qt.locale(), Locale.ShortFormat)}`
                 color: "#e0a040"
                 font: Kirigami.Theme.smallFont
                 wrapMode: Text.Wrap
