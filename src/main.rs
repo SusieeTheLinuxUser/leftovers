@@ -595,7 +595,7 @@ fn antigravity(d: &str) -> Fetch {
 /// Gemini and the other vendors' models (Claude, GPT-OSS) have separate quotas: one bar each, from the
 /// model with the least left. A model with no remainingFraction has none left.
 fn antigravity_limits(models: &Value, now: f64) -> Result<Vec<Value>, Err> {
-    let mut groups: Vec<(&str, Value)> = vec![];
+    let mut groups: Vec<(&str, f64, Value)> = vec![]; // name, unrounded used, row
     for (k, m) in models.as_object().into_iter().flatten() {
         let Some(q) = m.get("quotaInfo").filter(|q| truthy(q)) else { continue };
         if !m.get("displayName").is_some_and(truthy) {
@@ -618,16 +618,16 @@ fn antigravity_limits(models: &Value, now: f64) -> Result<Vec<Value>, Err> {
         let resets = ts(q.get("resetTime"))?;
         // Google reports "nothing used, resets now+7d" even when the quota is spent (checked 2026-11-26).
         let unknown = used == 0.0 && resets.is_some_and(|r| r >= now + 7.0 * 86400.0 - 3600.0);
-        // The comparison is against the stored (rounded) value, as in the Python. On a tie at 0 "unknown"
-        // wins, so model order can't turn it into a fake 100% left.
+        // The comparison is against the stored (rounded) value, as in the Python. On a tie at a true 0
+        // "unknown" wins, so model order can't turn it into a fake 100% left.
         if slot.is_none_or(|i| {
-            let stored = groups[i].1["used"].as_f64();
-            used > stored.unwrap_or(0.0) || (unknown && stored == Some(0.0))
+            let g = &groups[i];
+            used > g.2["used"].as_f64().unwrap_or(0.0) || (unknown && g.1 == 0.0)
         }) {
             let group = if unknown {
-                (name, json!({"name": name, "used": null, "resets": null, "value": "unknown", "extra": true}))
+                (name, used, json!({"name": name, "used": null, "resets": null, "value": "unknown", "extra": true}))
             } else {
-                (name, json!({"name": name, "used": shown, "resets": resets}))
+                (name, used, json!({"name": name, "used": shown, "resets": resets}))
             };
             match slot {
                 Some(i) => groups[i] = group,
@@ -637,7 +637,7 @@ fn antigravity_limits(models: &Value, now: f64) -> Result<Vec<Value>, Err> {
     }
     Ok(["Gemini", "Claude & GPT"]
         .iter()
-        .filter_map(|n| groups.iter().find(|g| g.0 == *n).map(|g| g.1.clone()))
+        .filter_map(|n| groups.iter().find(|g| g.0 == *n).map(|g| g.2.clone()))
         .collect())
 }
 
@@ -932,6 +932,15 @@ mod tests {
             "gemini-b": {"displayName": "B", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-12-03T12:00:00Z"}}
         });
         assert_eq!(antigravity_limits(&mixed, now).unwrap()[0]["value"], "unknown");
+
+        // a tiny real usage (rounds to 0.0) is still a tracked number, in either order
+        for (a, b) in [(json!(0.9999), json!(1)), (json!(1), json!(0.9999))] {
+            let tiny = json!({
+                "gemini-a": {"displayName": "A", "quotaInfo": {"remainingFraction": a, "resetTime": "2026-12-03T12:00:00Z"}},
+                "gemini-b": {"displayName": "B", "quotaInfo": {"remainingFraction": b, "resetTime": "2026-12-03T12:00:00Z"}}
+            });
+            assert_eq!(antigravity_limits(&tiny, now).unwrap()[0]["used"], json!(0.0));
+        }
     }
 
     #[test]
