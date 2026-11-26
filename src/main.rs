@@ -199,7 +199,7 @@ fn next_reset(period: Option<&str>, now: f64) -> Option<f64> {
 
 fn fresh(expires: f64, cli: &str) -> Result<(), Err> {
     if expires < now() {
-        return other(format!("login expired, open {cli} once to refresh it"));
+        return other(format!("updates after next {cli} use"));
     }
     Ok(())
 }
@@ -574,7 +574,7 @@ fn antigravity(d: &str) -> Fetch {
         &[("Content-Type", "application/x-www-form-urlencoded")],
         Some(&body),
     ) {
-        Err(ureq::Error::StatusCode(_)) => return other("login expired, open Antigravity once to refresh it"),
+        Err(ureq::Error::StatusCode(_)) => return other("updates after next Antigravity use"),
         r => serde_json::from_str::<Value>(&r.map_err(http_err)?)?,
     };
     let bearer = format!("Bearer {}", text(key(&login, "access_token")?)?);
@@ -1134,7 +1134,7 @@ mod tests {
         assert_eq!(jwt("x.eyJlbWFpbCI6InVzZXJAZXhhbXBsZS5jb20ifQ.y").unwrap()["email"], "user@example.com");
         assert_eq!(jwt("nodots"), Err(Err::Other("list index out of range".into())));
         assert!(fresh(1.0, "claude").is_err());
-        assert_eq!(fresh(1.0, "claude"), Err(Err::Other("login expired, open claude once to refresh it".into())));
+        assert_eq!(fresh(1.0, "claude"), Err(Err::Other("updates after next claude use".into())));
         assert!(fresh(now() + 100.0, "claude").is_ok());
         assert_eq!(
             Err::from(io::Error::from(io::ErrorKind::NotFound)),
