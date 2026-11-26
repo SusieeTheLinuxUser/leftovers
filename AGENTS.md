@@ -54,7 +54,7 @@ Handoff notes for coding agents. User-facing docs are in README.md.
   widget shows those with `error` set ("last known numbers · …"). Codex keeps the last ticket count.
 
 ## Data shapes (checked 2026-11-07)
-- Antigravity (checked 2026-11-26): Google can report `remainingFraction: 1` with a sliding reset at now+7d even when quota is spent; if the worst model in a group has zero usage and reset at least now+7d−1h, show an `unknown` extra row.
+- Antigravity (checked 2026-11-26): use `daily-cloudcode-pa.googleapis.com` for `v1internal:` calls. `retrieveUserQuotaSummary` returns groups of buckets with `window`, `resetTime`, `remainingFraction`, and optional `disabled`; the main `cloudcode-pa.googleapis.com` host's Claude/GPT numbers can be fake (`remainingFraction: 1` with a rolling now+7d reset).
 - Claude `api/oauth/usage` (checked 2026-11-10): the fixed keys `five_hour`, `seven_day`, `seven_day_opus`,
   `seven_day_sonnet` hold `utilization` + `resets_at`; ~20 more codenamed keys (`omelette_promotional`,
   `promo_credits`, …) were all null. A `limits` list carries every window with a display name:

@@ -580,7 +580,7 @@ fn antigravity(d: &str) -> Fetch {
     let bearer = format!("Bearer {}", text(key(&login, "access_token")?)?);
     let call = |method: &str, payload: Value| {
         post_json(
-            &format!("https://cloudcode-pa.googleapis.com/v1internal:{method}"),
+            &format!("https://daily-cloudcode-pa.googleapis.com/v1internal:{method}"),
             &[("Authorization", &bearer), ("Content-Type", "application/json"), ("User-Agent", "antigravity")],
             &payload,
         )
@@ -588,13 +588,33 @@ fn antigravity(d: &str) -> Fetch {
     let loaded = call("loadCodeAssist", json!({"metadata": {"ideType": "ANTIGRAVITY"}}))?;
     let project = loaded.get("cloudaicompanionProject").filter(|p| truthy(p)).or(creds.get("project_id"));
     let models = call("fetchAvailableModels", json!({"project": project}))?;
+    let summary = call("retrieveUserQuotaSummary", json!({"project": project})).ok();
     let email = str_of(jwt(text(key(&login, "id_token")?)?)?.get("email"));
-    Ok((email, antigravity_limits(key(&models, "models")?, now())?, None))
+    let models = antigravity_limits(key(&models, "models")?)?;
+    let limits = match summary {
+        Some(summary) => antigravity_merge(models, antigravity_summary(&summary)?),
+        None => models,
+    };
+    Ok((email, limits, None))
 }
 
 /// Gemini and the other vendors' models (Claude, GPT-OSS) have separate quotas: one bar each, from the
 /// model with the least left. A model with no remainingFraction has none left.
-fn antigravity_limits(models: &Value, now: f64) -> Result<Vec<Value>, Err> {
+fn antigravity_used(fraction: Option<&Value>) -> Result<(f64, Value), Err> {
+    Ok(match fraction {
+        None => (100.0, json!(100)),
+        Some(r) if r.is_i64() || r.is_u64() => {
+            let u = 100 * (1 - to_i64(r));
+            (u as f64, json!(u))
+        }
+        Some(r) => {
+            let u = 100.0 * (1.0 - num(r)?);
+            (u, json!(round1(u)))
+        }
+    })
+}
+
+fn antigravity_limits(models: &Value) -> Result<Vec<Value>, Err> {
     let mut groups: Vec<(&str, f64, Value)> = vec![]; // name, unrounded used, row
     for (k, m) in models.as_object().into_iter().flatten() {
         let Some(q) = m.get("quotaInfo").filter(|q| truthy(q)) else { continue };
@@ -602,33 +622,11 @@ fn antigravity_limits(models: &Value, now: f64) -> Result<Vec<Value>, Err> {
             continue; // tab_*/chat_* are completion internals, not models you pick
         }
         let name = if k.starts_with("gemini") { "Gemini" } else { "Claude & GPT" };
-        // Like Python: an int fraction (or none) gives an int, a float one a rounded float.
-        let (used, shown) = match q.get("remainingFraction") {
-            None => (100.0, json!(100)),
-            Some(r) if r.is_i64() || r.is_u64() => {
-                let u = 100 * (1 - to_i64(r));
-                (u as f64, json!(u))
-            }
-            Some(r) => {
-                let u = 100.0 * (1.0 - num(r)?);
-                (u, json!(round1(u)))
-            }
-        };
+        let (used, shown) = antigravity_used(q.get("remainingFraction"))?;
         let slot = groups.iter().position(|g| g.0 == name);
         let resets = ts(q.get("resetTime"))?;
-        // Google reports "nothing used, resets now+7d" even when the quota is spent (checked 2026-11-26).
-        let unknown = used == 0.0 && resets.is_some_and(|r| r >= now + 7.0 * 86400.0 - 3600.0);
-        // The comparison is against the stored (rounded) value, as in the Python. On a tie at a true 0
-        // "unknown" wins, so model order can't turn it into a fake 100% left.
-        if slot.is_none_or(|i| {
-            let g = &groups[i];
-            used > g.2["used"].as_f64().unwrap_or(0.0) || (unknown && g.1 == 0.0)
-        }) {
-            let group = if unknown {
-                (name, used, json!({"name": name, "used": null, "resets": null, "value": "unknown", "extra": true}))
-            } else {
-                (name, used, json!({"name": name, "used": shown, "resets": resets}))
-            };
+        if slot.is_none_or(|i| used > groups[i].2["used"].as_f64().unwrap_or(0.0)) {
+            let group = (name, used, json!({"name": name, "used": shown, "resets": resets}));
             match slot {
                 Some(i) => groups[i] = group,
                 None => groups.push(group),
@@ -639,6 +637,46 @@ fn antigravity_limits(models: &Value, now: f64) -> Result<Vec<Value>, Err> {
         .iter()
         .filter_map(|n| groups.iter().find(|g| g.0 == *n).map(|g| g.2.clone()))
         .collect())
+}
+
+fn antigravity_summary(summary: &Value) -> Result<Vec<Value>, Err> {
+    let mut limits = vec![];
+    for group in summary.get("groups").and_then(Value::as_array).into_iter().flatten() {
+        let base = if group.get("displayName").and_then(Value::as_str).is_some_and(|s| s.contains("Gemini")) {
+            "Gemini"
+        } else {
+            "Claude & GPT"
+        };
+        for bucket in group.get("buckets").and_then(Value::as_array).into_iter().flatten() {
+            if bucket.get("disabled").and_then(Value::as_bool) == Some(true) { continue; }
+            let window = bucket.get("window").and_then(Value::as_str).unwrap_or("");
+            let name = match window {
+                "weekly" => base.to_owned(),
+                "5h" => format!("{base} 5h"),
+                other => format!("{base} {other}"),
+            };
+            let (_, shown) = antigravity_used(bucket.get("remainingFraction"))?;
+            limits.push(json!({"name": name, "used": shown, "resets": ts(bucket.get("resetTime"))?}));
+        }
+    }
+    Ok(limits)
+}
+
+fn antigravity_merge(models: Vec<Value>, summary: Vec<Value>) -> Vec<Value> {
+    let covered: HashSet<&str> = summary.iter().filter_map(|l| l["name"].as_str())
+        .map(|n| if n.starts_with("Gemini ") { "Gemini" } else if n.starts_with("Claude & GPT ") { "Claude & GPT" } else { n })
+        .collect();
+    let mut limits: Vec<Value> = models.into_iter().filter(|l| {
+        l["name"].as_str().is_none_or(|name| !covered.contains(name))
+    }).collect();
+    limits.extend(summary);
+    limits.sort_by_key(|l| match l["name"].as_str().unwrap_or("") {
+        "Gemini" => 0,
+        "Claude & GPT" => 1,
+        "Claude & GPT 5h" => 2,
+        _ => 3,
+    });
+    limits
 }
 
 // ---------- OpenRouter ----------
@@ -901,7 +939,7 @@ mod tests {
         });
         // Python compares 100 == 100.0; here a missing fraction stays an int like in Python's JSON output.
         assert_eq!(
-            antigravity_limits(&models, t("2026-11-06T00:00:00Z")).unwrap(),
+            antigravity_limits(&models).unwrap(),
             vec![
                 json!({"name": "Gemini", "used": 100, "resets": t("2026-11-09T22:29:34Z")}),
                 json!({"name": "Claude & GPT", "used": 25.0, "resets": null}),
@@ -910,37 +948,36 @@ mod tests {
     }
 
     #[test]
-    fn antigravity_untracked_quota() {
-        let now = t("2026-11-26T12:00:00Z");
+    fn antigravity_summary_quotas() {
+        let summary = json!({"groups": [{"displayName": "Claude and GPT models", "buckets": [
+            {"bucketId": "3p-weekly", "window": "weekly", "resetTime": "2026-12-03T12:48:24Z", "remainingFraction": 0},
+            {"bucketId": "3p-5h", "window": "5h", "resetTime": "2026-11-26T17:48:24Z", "disabled": true, "remainingFraction": 0}
+        ]}]});
+        assert_eq!(antigravity_summary(&summary).unwrap(), vec![json!({
+            "name": "Claude & GPT", "used": 100, "resets": t("2026-12-03T12:48:24Z")
+        })]);
+
+        let five_hour = json!({"groups": [{"displayName": "Claude and GPT models", "buckets": [
+            {"window": "5h", "resetTime": "2026-11-26T17:48:24Z", "remainingFraction": 0.25}
+        ]}]});
+        assert_eq!(antigravity_summary(&five_hour).unwrap(), vec![json!({
+            "name": "Claude & GPT 5h", "used": 75.0, "resets": t("2026-11-26T17:48:24Z")
+        })]);
+    }
+
+    #[test]
+    fn antigravity_summary_overrides_model_group() {
         let models = json!({
-            "gemini-3-flash": {"displayName": "Gemini", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-12-03T12:00:00Z"}},
-            "claude-opus": {"displayName": "Claude", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-12-03T12:00:00Z"}}
+            "gemini-3-flash": {"displayName": "Gemini", "quotaInfo": {"remainingFraction": 0.8}},
+            "claude-opus": {"displayName": "Claude", "quotaInfo": {"remainingFraction": 1.0}}
         });
-        assert_eq!(antigravity_limits(&models, now).unwrap(), vec![
-            json!({"name": "Gemini", "used": null, "resets": null, "value": "unknown", "extra": true}),
-            json!({"name": "Claude & GPT", "used": null, "resets": null, "value": "unknown", "extra": true}),
+        let summary = json!({"groups": [{"displayName": "Claude and GPT models", "buckets": [
+            {"window": "weekly", "remainingFraction": 0}
+        ]}]});
+        assert_eq!(antigravity_merge(antigravity_limits(&models).unwrap(), antigravity_summary(&summary).unwrap()), vec![
+            json!({"name": "Gemini", "used": 20.0, "resets": null}),
+            json!({"name": "Claude & GPT", "used": 100, "resets": null})
         ]);
-
-        let near_reset = json!({"gemini-3-flash": {"displayName": "Gemini", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-26T14:00:00Z"}}});
-        assert_eq!(antigravity_limits(&near_reset, now).unwrap(), vec![
-            json!({"name": "Gemini", "used": 0, "resets": t("2026-11-26T14:00:00Z")}),
-        ]);
-
-        // one model near its reset, one sliding: unknown, whichever comes first
-        let mixed = json!({
-            "gemini-a": {"displayName": "A", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-26T14:00:00Z"}},
-            "gemini-b": {"displayName": "B", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-12-03T12:00:00Z"}}
-        });
-        assert_eq!(antigravity_limits(&mixed, now).unwrap()[0]["value"], "unknown");
-
-        // a tiny real usage (rounds to 0.0) is still a tracked number, in either order
-        for (a, b) in [(json!(0.9999), json!(1)), (json!(1), json!(0.9999))] {
-            let tiny = json!({
-                "gemini-a": {"displayName": "A", "quotaInfo": {"remainingFraction": a, "resetTime": "2026-12-03T12:00:00Z"}},
-                "gemini-b": {"displayName": "B", "quotaInfo": {"remainingFraction": b, "resetTime": "2026-12-03T12:00:00Z"}}
-            });
-            assert_eq!(antigravity_limits(&tiny, now).unwrap()[0]["used"], json!(0.0));
-        }
     }
 
     #[test]

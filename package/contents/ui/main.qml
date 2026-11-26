@@ -273,7 +273,7 @@ PlasmoidItem {
                             required property int index
                             Layout.fillWidth: true
                             label: modelData.name
-                            used: modelData.used ?? NaN
+                            used: modelData.used
                             resets: modelData.resets
                             tint: provider.tint
                             tickets: index === 0 ? provider.account.tickets || 0 : 0  // once per account
