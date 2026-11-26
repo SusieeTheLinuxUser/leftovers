@@ -7,7 +7,7 @@ Handoff notes for coding agents. User-facing docs are in README.md.
   saved login, calls the usage APIs, prints JSON
   (`{"providers": [{name, account, limits: [{name, used, resets, value?, extra?}], tickets?, error?}]}`).
   Never rotates saved logins (Antigravity only mints a short-lived Google access token).
-  `--skip Name,Name` skips providers entirely (main.qml passes the ones hidden in Configure…).
+  `--skip Name,Name` skips providers entirely (main.qml passes the ones hidden in Configure…). Expired logins stay read-only; the widget shows cached numbers and says they update after the next CLI use.
   Ported from `limits.py` on 2026-11-08 (same JSON, same cache; compared provider by provider on real accounts).
 - `package/contents/bin/leftovers`: where main.qml runs the helper from. Not in git: CI or `cargo build` puts it there.
 - `.github/workflows/build.yml`: clippy, tests, static musl build, then `leftovers-<version>.plasmoid` as the

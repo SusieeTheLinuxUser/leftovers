@@ -26,8 +26,7 @@ show up without any extra config.
 Account emails are blurred until you click one. On the desktop, push the card into a screen corner or
 against an edge and it fills the gap and squares off those corners.
 
-The panel shows the limit closest to running out (single-model extras like Weekly Fable don't count there). Logins are only read, never refreshed: if one expired,
-open that CLI once and the widget catches up on its next poll (every 5 minutes).
+The panel shows the limit closest to running out (single-model extras like Weekly Fable don't count there). Logins are only read, never refreshed: if one expires, the widget keeps the last known numbers and updates them after you next use that CLI.
 
 Hide the providers you don't use in the widget's **Configure…** dialog; hidden ones aren't fetched at all.
 
