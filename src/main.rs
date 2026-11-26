@@ -615,11 +615,16 @@ fn antigravity_limits(models: &Value, now: f64) -> Result<Vec<Value>, Err> {
             }
         };
         let slot = groups.iter().position(|g| g.0 == name);
-        // The comparison is against the stored (rounded) value, as in the Python.
-        if slot.is_none_or(|i| used > groups[i].1["used"].as_f64().unwrap_or(0.0)) {
-            let resets = ts(q.get("resetTime"))?;
-            // Google reports "nothing used, resets now+7d" even when the quota is spent (checked 2026-11-26).
-            let group = if used == 0.0 && resets.is_some_and(|r| r >= now + 7.0 * 86400.0 - 3600.0) {
+        let resets = ts(q.get("resetTime"))?;
+        // Google reports "nothing used, resets now+7d" even when the quota is spent (checked 2026-11-26).
+        let unknown = used == 0.0 && resets.is_some_and(|r| r >= now + 7.0 * 86400.0 - 3600.0);
+        // The comparison is against the stored (rounded) value, as in the Python. On a tie at 0 "unknown"
+        // wins, so model order can't turn it into a fake 100% left.
+        if slot.is_none_or(|i| {
+            let stored = groups[i].1["used"].as_f64();
+            used > stored.unwrap_or(0.0) || (unknown && stored == Some(0.0))
+        }) {
+            let group = if unknown {
                 (name, json!({"name": name, "used": null, "resets": null, "value": "unknown", "extra": true}))
             } else {
                 (name, json!({"name": name, "used": shown, "resets": resets}))
@@ -920,6 +925,13 @@ mod tests {
         assert_eq!(antigravity_limits(&near_reset, now).unwrap(), vec![
             json!({"name": "Gemini", "used": 0, "resets": t("2026-11-26T14:00:00Z")}),
         ]);
+
+        // one model near its reset, one sliding: unknown, whichever comes first
+        let mixed = json!({
+            "gemini-a": {"displayName": "A", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-26T14:00:00Z"}},
+            "gemini-b": {"displayName": "B", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-12-03T12:00:00Z"}}
+        });
+        assert_eq!(antigravity_limits(&mixed, now).unwrap()[0]["value"], "unknown");
     }
 
     #[test]
