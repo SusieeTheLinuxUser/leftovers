@@ -12,9 +12,10 @@ ColumnLayout {
     property string value  // shown instead of the percentage, e.g. "$15.10" for money
     property real now: Date.now()
 
+    readonly property bool known: !isNaN(used)
     readonly property real secs: resets ? resets - now / 1000 : 0
     // A reset that already passed means the numbers are stale until the next fetch: treat as full.
-    readonly property real remaining: resets && secs <= 0 ? 100 : Math.max(0, Math.min(100, 100 - used))
+    readonly property real remaining: !known ? 0 : resets && secs <= 0 ? 100 : Math.max(0, Math.min(100, 100 - used))
 
     spacing: 2
 
@@ -43,7 +44,7 @@ ColumnLayout {
         }
         Text {
             text: bar.value || (bar.remaining <= 0 ? "empty" : `${Math.round(bar.remaining)}%`)
-            color: bar.remaining <= 10 ? "#ff5c5c" : "#f5f5f5"
+            color: bar.known && bar.remaining <= 10 ? "#ff5c5c" : "#f5f5f5"
             font.weight: Font.DemiBold
             font.features: { "tnum": 1 }
             horizontalAlignment: Text.AlignRight

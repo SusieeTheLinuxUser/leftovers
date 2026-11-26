@@ -589,12 +589,12 @@ fn antigravity(d: &str) -> Fetch {
     let project = loaded.get("cloudaicompanionProject").filter(|p| truthy(p)).or(creds.get("project_id"));
     let models = call("fetchAvailableModels", json!({"project": project}))?;
     let email = str_of(jwt(text(key(&login, "id_token")?)?)?.get("email"));
-    Ok((email, antigravity_limits(key(&models, "models")?)?, None))
+    Ok((email, antigravity_limits(key(&models, "models")?, now())?, None))
 }
 
 /// Gemini and the other vendors' models (Claude, GPT-OSS) have separate quotas: one bar each, from the
 /// model with the least left. A model with no remainingFraction has none left.
-fn antigravity_limits(models: &Value) -> Result<Vec<Value>, Err> {
+fn antigravity_limits(models: &Value, now: f64) -> Result<Vec<Value>, Err> {
     let mut groups: Vec<(&str, Value)> = vec![];
     for (k, m) in models.as_object().into_iter().flatten() {
         let Some(q) = m.get("quotaInfo").filter(|q| truthy(q)) else { continue };
@@ -617,7 +617,13 @@ fn antigravity_limits(models: &Value) -> Result<Vec<Value>, Err> {
         let slot = groups.iter().position(|g| g.0 == name);
         // The comparison is against the stored (rounded) value, as in the Python.
         if slot.is_none_or(|i| used > groups[i].1["used"].as_f64().unwrap_or(0.0)) {
-            let group = (name, json!({"name": name, "used": shown, "resets": ts(q.get("resetTime"))?}));
+            let resets = ts(q.get("resetTime"))?;
+            // Google reports "nothing used, resets now+7d" even when the quota is spent (checked 2026-11-26).
+            let group = if used == 0.0 && resets.is_some_and(|r| r >= now + 7.0 * 86400.0 - 3600.0) {
+                (name, json!({"name": name, "used": null, "resets": null, "value": "unknown", "extra": true}))
+            } else {
+                (name, json!({"name": name, "used": shown, "resets": resets}))
+            };
             match slot {
                 Some(i) => groups[i] = group,
                 None => groups.push(group),
@@ -890,12 +896,30 @@ mod tests {
         });
         // Python compares 100 == 100.0; here a missing fraction stays an int like in Python's JSON output.
         assert_eq!(
-            antigravity_limits(&models).unwrap(),
+            antigravity_limits(&models, t("2026-11-06T00:00:00Z")).unwrap(),
             vec![
                 json!({"name": "Gemini", "used": 100, "resets": t("2026-11-09T22:29:34Z")}),
                 json!({"name": "Claude & GPT", "used": 25.0, "resets": null}),
             ]
         );
+    }
+
+    #[test]
+    fn antigravity_untracked_quota() {
+        let now = t("2026-11-26T12:00:00Z");
+        let models = json!({
+            "gemini-3-flash": {"displayName": "Gemini", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-12-03T12:00:00Z"}},
+            "claude-opus": {"displayName": "Claude", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-12-03T12:00:00Z"}}
+        });
+        assert_eq!(antigravity_limits(&models, now).unwrap(), vec![
+            json!({"name": "Gemini", "used": null, "resets": null, "value": "unknown", "extra": true}),
+            json!({"name": "Claude & GPT", "used": null, "resets": null, "value": "unknown", "extra": true}),
+        ]);
+
+        let near_reset = json!({"gemini-3-flash": {"displayName": "Gemini", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-26T14:00:00Z"}}});
+        assert_eq!(antigravity_limits(&near_reset, now).unwrap(), vec![
+            json!({"name": "Gemini", "used": 0, "resets": t("2026-11-26T14:00:00Z")}),
+        ]);
     }
 
     #[test]
