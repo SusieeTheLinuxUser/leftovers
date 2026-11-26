@@ -588,18 +588,22 @@ fn antigravity(d: &str) -> Fetch {
     let loaded = call("loadCodeAssist", json!({"metadata": {"ideType": "ANTIGRAVITY"}}))?;
     let project = loaded.get("cloudaicompanionProject").filter(|p| truthy(p)).or(creds.get("project_id"));
     let models = call("fetchAvailableModels", json!({"project": project}))?;
+    // The real Claude & GPT numbers (weekly + 5h) are only in the summary; it's optional.
     let summary = call("retrieveUserQuotaSummary", json!({"project": project})).ok();
     let email = str_of(jwt(text(key(&login, "id_token")?)?)?.get("email"));
-    let models = antigravity_limits(key(&models, "models")?)?;
-    let limits = match summary {
-        Some(summary) => antigravity_merge(models, antigravity_summary(&summary)?),
-        None => models,
-    };
-    Ok((email, limits, None))
+    let limits = antigravity_limits(key(&models, "models")?)?;
+    let summary = summary.and_then(|s| antigravity_summary(&s).ok()).unwrap_or_default();
+    Ok((email, antigravity_merge(limits, summary), None))
 }
 
-/// Gemini and the other vendors' models (Claude, GPT-OSS) have separate quotas: one bar each, from the
-/// model with the least left. A model with no remainingFraction has none left.
+/// A summary bar ("Claude & GPT", "Claude & GPT 5h") replaces the fetchAvailableModels bar of its group.
+fn antigravity_merge(mut limits: Vec<Value>, summary: Vec<Value>) -> Vec<Value> {
+    limits.retain(|m| !summary.iter().any(|l| str_of(l.get("name")).starts_with(&str_of(m.get("name")))));
+    limits.extend(summary);
+    limits
+}
+
+/// Like Python: an int fraction (or none, meaning none left) gives an int, a float one a rounded float.
 fn antigravity_used(fraction: Option<&Value>) -> Result<(f64, Value), Err> {
     Ok(match fraction {
         None => (100.0, json!(100)),
@@ -614,8 +618,10 @@ fn antigravity_used(fraction: Option<&Value>) -> Result<(f64, Value), Err> {
     })
 }
 
+/// Gemini and the other vendors' models (Claude, GPT-OSS) have separate quotas: one bar each, from the
+/// model with the least left.
 fn antigravity_limits(models: &Value) -> Result<Vec<Value>, Err> {
-    let mut groups: Vec<(&str, f64, Value)> = vec![]; // name, unrounded used, row
+    let mut groups: Vec<(&str, Value)> = vec![];
     for (k, m) in models.as_object().into_iter().flatten() {
         let Some(q) = m.get("quotaInfo").filter(|q| truthy(q)) else { continue };
         if !m.get("displayName").is_some_and(truthy) {
@@ -624,9 +630,9 @@ fn antigravity_limits(models: &Value) -> Result<Vec<Value>, Err> {
         let name = if k.starts_with("gemini") { "Gemini" } else { "Claude & GPT" };
         let (used, shown) = antigravity_used(q.get("remainingFraction"))?;
         let slot = groups.iter().position(|g| g.0 == name);
-        let resets = ts(q.get("resetTime"))?;
-        if slot.is_none_or(|i| used > groups[i].2["used"].as_f64().unwrap_or(0.0)) {
-            let group = (name, used, json!({"name": name, "used": shown, "resets": resets}));
+        // The comparison is against the stored (rounded) value, as in the Python.
+        if slot.is_none_or(|i| used > groups[i].1["used"].as_f64().unwrap_or(0.0)) {
+            let group = (name, json!({"name": name, "used": shown, "resets": ts(q.get("resetTime"))?}));
             match slot {
                 Some(i) => groups[i] = group,
                 None => groups.push(group),
@@ -635,48 +641,29 @@ fn antigravity_limits(models: &Value) -> Result<Vec<Value>, Err> {
     }
     Ok(["Gemini", "Claude & GPT"]
         .iter()
-        .filter_map(|n| groups.iter().find(|g| g.0 == *n).map(|g| g.2.clone()))
+        .filter_map(|n| groups.iter().find(|g| g.0 == *n).map(|g| g.1.clone()))
         .collect())
 }
 
+/// retrieveUserQuotaSummary: one bar per bucket that applies ("Claude & GPT" weekly, "Claude & GPT 5h").
 fn antigravity_summary(summary: &Value) -> Result<Vec<Value>, Err> {
     let mut limits = vec![];
     for group in summary.get("groups").and_then(Value::as_array).into_iter().flatten() {
-        let base = if group.get("displayName").and_then(Value::as_str).is_some_and(|s| s.contains("Gemini")) {
-            "Gemini"
-        } else {
-            "Claude & GPT"
-        };
-        for bucket in group.get("buckets").and_then(Value::as_array).into_iter().flatten() {
-            if bucket.get("disabled").and_then(Value::as_bool) == Some(true) { continue; }
-            let window = bucket.get("window").and_then(Value::as_str).unwrap_or("");
-            let name = match window {
-                "weekly" => base.to_owned(),
-                "5h" => format!("{base} 5h"),
-                other => format!("{base} {other}"),
+        let gemini = group.get("displayName").and_then(Value::as_str).is_some_and(|s| s.contains("Gemini"));
+        let base = if gemini { "Gemini" } else { "Claude & GPT" };
+        for b in group.get("buckets").and_then(Value::as_array).into_iter().flatten() {
+            if b.get("disabled").is_some_and(truthy) {
+                continue; // e.g. the 5h bucket while the weekly one is used up
+            }
+            let name = match b.get("window").and_then(Value::as_str).unwrap_or("weekly") {
+                "weekly" => base.to_string(),
+                w => format!("{base} {w}"),
             };
-            let (_, shown) = antigravity_used(bucket.get("remainingFraction"))?;
-            limits.push(json!({"name": name, "used": shown, "resets": ts(bucket.get("resetTime"))?}));
+            let (_, shown) = antigravity_used(b.get("remainingFraction"))?;
+            limits.push(json!({"name": name, "used": shown, "resets": ts(b.get("resetTime"))?}));
         }
     }
     Ok(limits)
-}
-
-fn antigravity_merge(models: Vec<Value>, summary: Vec<Value>) -> Vec<Value> {
-    let covered: HashSet<&str> = summary.iter().filter_map(|l| l["name"].as_str())
-        .map(|n| if n.starts_with("Gemini ") { "Gemini" } else if n.starts_with("Claude & GPT ") { "Claude & GPT" } else { n })
-        .collect();
-    let mut limits: Vec<Value> = models.into_iter().filter(|l| {
-        l["name"].as_str().is_none_or(|name| !covered.contains(name))
-    }).collect();
-    limits.extend(summary);
-    limits.sort_by_key(|l| match l["name"].as_str().unwrap_or("") {
-        "Gemini" => 0,
-        "Claude & GPT" => 1,
-        "Claude & GPT 5h" => 2,
-        _ => 3,
-    });
-    limits
 }
 
 // ---------- OpenRouter ----------
