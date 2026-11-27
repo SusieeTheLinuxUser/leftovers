@@ -9,7 +9,7 @@ Handoff notes for coding agents. User-facing docs are in README.md.
   Never rotates saved logins (Antigravity only mints a short-lived Google access token).
   `--skip Name,Name` skips providers entirely (main.qml passes the ones hidden in Configure…). Expired logins stay read-only; the widget shows cached numbers and says they update after the next CLI use.
   Ported from `limits.py` on 2026-11-08 (same JSON, same cache; compared provider by provider on real accounts).
-- `package/contents/bin/leftovers`: where main.qml runs the helper from. Not in git: CI or `cargo build` puts it there.
+- `package/contents/bin/leftovers`: where main.qml runs the helper from. Not in git: CI or the `install` step in README puts it there.
 - `.github/workflows/build.yml`: clippy, tests, static musl build, then `leftovers-<version>.plasmoid` as the
   `plasmoid` artifact of every run (and a GitHub release asset on `v*` tags). That file is what goes to the KDE Store.
 - `package/contents/config/main.xml` + `package/contents/config/config.qml`: the `hiddenProviders`
