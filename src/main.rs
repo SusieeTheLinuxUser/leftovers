@@ -346,14 +346,15 @@ fn claude(d: &str) -> Fetch {
 fn claude_parse(data: &Value, now: f64) -> Result<(Vec<Value>, i64), Err> {
     let grants = data.get("cedar_ember").filter(|v| truthy(v));
     let eligible = grants.and_then(|g| g.get("eligible")).is_some_and(truthy);
-    let mut tickets = 0;
+    let mut tickets = 0i64;
     for g in grants.and_then(|g| g.get("grants")).and_then(Value::as_array).into_iter().flatten() {
         if eligible
             && g.get("usable_now").is_some_and(truthy)
             && !g.get("paused").is_some_and(truthy)
             && ts(g.get("ends_at"))?.filter(|t| *t != 0.0).unwrap_or(1e12) > now
         {
-            tickets += g.get("resets_left").map_or(0, to_i64);
+            // saturate: a resets_left at the i64 bounds must not overflow the count
+            tickets = tickets.saturating_add(g.get("resets_left").map_or(0, to_i64));
         }
     }
     let mut limits = vec![];
@@ -1096,6 +1097,17 @@ mod tests {
         assert_eq!(limits[1]["name"], "Weekly Sonnet");
         // a limit without "utilization" is a changed API
         assert_eq!(claude_parse(&json!({"five_hour": {"resets_at": null}}), now), Err(Err::Missing("utilization".into())));
+    }
+
+    #[test]
+    fn claude_tickets_extreme_resets_left() {
+        // grants at the i64 bounds must saturate the ticket count, not overflow it
+        let now = utc(2026, 11, 10, 0, 0);
+        let data = json!({"cedar_ember": {"eligible": true, "grants": [
+            {"usable_now": true, "paused": false, "resets_left": 9223372036854775807i64, "ends_at": "2026-12-01T00:00:00Z"},
+            {"usable_now": true, "paused": false, "resets_left": 9223372036854775807i64, "ends_at": "2026-12-01T00:00:00Z"}
+        ]}});
+        assert_eq!(claude_parse(&data, now).unwrap().1, 9223372036854775807i64);
     }
 
     #[test]
