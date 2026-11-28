@@ -735,6 +735,11 @@ fn openrouter_limits(credits: &Value, info: &Value, now: f64) -> Result<Vec<Valu
 /// Account dirs set up as provider instances in T3 Code (Settings > Providers).
 fn t3(driver: &str, keys: &[&str]) -> Vec<String> {
     let Ok(settings) = read_json(&format!("{}/.t3/userdata/settings.json", home())) else { return vec![] };
+    t3_instances(&settings, driver, keys)
+}
+
+/// The filter over already-parsed settings, so tests can pass synthetic ones.
+fn t3_instances(settings: &Value, driver: &str, keys: &[&str]) -> Vec<String> {
     let Some(instances) = settings.get("providerInstances").and_then(Value::as_object) else { return vec![] };
     instances
         .values()
@@ -1242,5 +1247,170 @@ mod tests {
             Err::from(io::Error::from(io::ErrorKind::NotFound)),
             Err::NotFound
         );
+    }
+
+    // ---- shapes seen or plausible in the wild, none covered before ----
+
+    #[test]
+    fn t3_instances_shapes() {
+        let settings = json!({
+            "providerInstances": {
+                "ok": {"driver": "codex", "config": {"homePath": "~/codex-a", "shadowHomePath": "~/codex-b"}},
+                "noConfig": {"driver": "codex"}, // AGENTS.md: some instances have no config key at all
+                "nullConfig": {"driver": "codex", "config": null},
+                "wrongType": {"driver": "codex", "config": {"homePath": 5}},
+                "emptyPath": {"driver": "codex", "config": {"homePath": ""}},
+                "otherDriver": {"driver": "claudeAgent", "config": {"homePath": "~/claude"}},
+                "noDriver": {"config": {"homePath": "~/x"}},
+                "broken": "not an object"
+            },
+            "instancesArray": []
+        });
+        let h = home();
+        assert_eq!(
+            t3_instances(&settings, "codex", &["homePath", "shadowHomePath"]),
+            vec![format!("{h}/codex-a"), format!("{h}/codex-b")]
+        );
+        assert_eq!(t3_instances(&settings, "claudeAgent", &["homePath"]), vec![format!("{h}/claude")]);
+        assert_eq!(t3_instances(&json!({}), "codex", &["homePath"]), Vec::<String>::new());
+        assert_eq!(t3_instances(&json!({"providerInstances": []}), "codex", &["homePath"]), Vec::<String>::new());
+    }
+
+    #[test]
+    fn claude_promo_scope_variants() {
+        let now = utc(2026, 11, 10, 0, 0);
+        let data = json!({"limits": [
+            {"kind": "weekly_scoped", "group": "weekly", "percent": 19, "scope": {"surface": {"display_name": "Chat"}}},
+            {"kind": "weekly_scoped", "group": "weekly", "percent": 8,
+             "scope": {"model": {"display_name": "Fable"}, "surface": {"display_name": "Chat"}}}
+        ]});
+        let (limits, _) = claude_parse(&data, now).unwrap();
+        assert_eq!(
+            limits,
+            vec![
+                json!({"name": "Weekly Chat", "used": 19, "resets": null, "extra": true}),
+                json!({"name": "Weekly Fable Chat", "used": 8, "resets": null, "extra": true}),
+            ]
+        );
+    }
+
+    #[test]
+    fn codex_wham_edge_shapes() {
+        // windows present but null: nothing usable, main() turns the empty list into "no active plan"
+        let data = json!({"rate_limit": {"primary_window": null, "secondary_window": null}});
+        assert_eq!(codex_wham(&data).unwrap(), (Vec::<Value>::new(), 0));
+        assert_eq!(codex_wham(&json!({"rate_limit": null})).unwrap(), (Vec::<Value>::new(), 0));
+        // a window object whose fields are all null: the fetch fails and codex() falls back to the logs
+        let null_fields = json!({"rate_limit": {"primary_window": {"limit_window_seconds": null, "used_percent": null}}});
+        assert_eq!(codex_wham(&null_fields), Err(Err::Other("expected a number, got null".into())));
+    }
+
+    #[test]
+    fn antigravity_limits_skips_internals() {
+        // a model without quotaInfo (or a displayName) is a completion internal, not a pickable model
+        let models = json!({
+            "claude-opus": {"displayName": "Claude Opus"},
+            "tab_flash": {"quotaInfo": {"remainingFraction": 0}},
+            "gemini-3-flash": {"displayName": "Gemini 3 Flash", "quotaInfo": {"remainingFraction": 0.5}}
+        });
+        assert_eq!(
+            antigravity_limits(&models).unwrap(),
+            vec![json!({"name": "Gemini", "used": 50.0, "resets": null})]
+        );
+    }
+
+    #[test]
+    fn antigravity_summary_edge_shapes() {
+        // a group without a display name counts as Claude & GPT; a bucket without a fraction is used up
+        let summary = json!({"groups": [{"buckets": [{"window": "weekly"}]}]});
+        assert_eq!(antigravity_summary(&summary).unwrap(), vec![json!({"name": "Claude & GPT", "used": 100, "resets": null})]);
+        assert_eq!(antigravity_summary(&json!({})).unwrap(), Vec::<Value>::new());
+        // a "Claude & GPT 5h"-only summary replaces the fetchAvailableModels bar of the same group
+        let merged = antigravity_merge(
+            vec![json!({"name": "Claude & GPT", "used": 50, "resets": null})],
+            vec![json!({"name": "Claude & GPT 5h", "used": 75.0, "resets": null})],
+        );
+        assert_eq!(merged, vec![json!({"name": "Claude & GPT 5h", "used": 75.0, "resets": null})]);
+    }
+
+    #[test]
+    fn openrouter_key_limit_without_reset() {
+        // a limit with no (or an unknown) limit_reset has no next reset and keeps the plain name
+        let credits = json!({"total_credits": 20, "total_usage": 4.9});
+        let now = utc(2026, 11, 6, 18, 30);
+        for info in [
+            json!({"limit": 20, "limit_remaining": 18.5}),
+            json!({"limit": 20, "limit_reset": "fortnightly", "limit_remaining": 18.5}),
+        ] {
+            assert_eq!(
+                openrouter_limits(&credits, &info, now).unwrap()[1],
+                json!({"name": "Key limit", "used": 7.5, "resets": null, "value": "$1.50/$20"})
+            );
+        }
+    }
+
+    #[test]
+    fn grok_zero_usage() {
+        // 0% used is a live bar; only a MISSING creditUsagePercent means "no active plan"
+        let live = json!({"creditUsagePercent": 0, "currentPeriod": {"type": "USAGE_PERIOD_TYPE_WEEKLY", "end": "2026-11-14T18:59:33.334+00:00"}});
+        assert_eq!(
+            grok_limits(&live).unwrap(),
+            vec![json!({"name": "Weekly", "used": 0, "resets": t("2026-11-14T18:59:33.334+00:00")})]
+        );
+    }
+
+    #[test]
+    fn truthy_and_to_i64() {
+        for falsy in [Value::Null, json!(false), json!(0), json!(0.0), json!(-0.0), json!(""), json!([]), json!({})] {
+            assert!(!truthy(&falsy), "{falsy} should be falsy");
+        }
+        for truthy_v in [json!(true), json!(1), json!("x"), json!([0]), json!({"a": 0})] {
+            assert!(truthy(&truthy_v), "{truthy_v} should be truthy");
+        }
+        // Python's int() reads numeric strings; the port only reads numbers and everything else is 0
+        assert_eq!(to_i64(&json!(5)), 5);
+        assert_eq!(to_i64(&json!(2.7)), 2);
+        assert_eq!(to_i64(&json!("5")), 0);
+        assert_eq!(to_i64(&json!(1e19)), 9223372036854775807i64);
+    }
+
+    #[test]
+    fn ts_str_variants() {
+        // an offset-less time reads as UTC (documented divergence: Python reads it as local time)
+        assert_eq!(ts_str("2026-11-08T17:00:00").unwrap(), utc(2026, 11, 8, 17, 0));
+        // nine fractional digits truncate to microseconds, like Python's fromisoformat
+        assert_eq!(ts_str("2026-11-08T17:00:00.123456789Z").unwrap(), t("2026-11-08T17:00:00.123456Z"));
+        // a bare date is not accepted here (Python's fromisoformat would take it)
+        assert!(ts_str("2026-11-08").is_err());
+    }
+
+    #[test]
+    fn cmp_json_ordering() {
+        assert_eq!(cmp_json(&json!("b"), &json!("a")), Ordering::Greater);
+        assert_eq!(cmp_json(&json!(2), &json!(10)), Ordering::Less);
+        // mixed types can't happen inside one auth.json; non-numbers just sort before numbers
+        assert_eq!(cmp_json(&json!("5"), &json!(5)), Ordering::Less);
+        assert_eq!(cmp_json(&json!(5), &json!("5")), Ordering::Greater);
+        assert_eq!(cmp_json(&json!(null), &json!(null)), Ordering::Equal);
+    }
+
+    #[test]
+    fn dir_listing() {
+        let d = tmp("dirs");
+        fs::create_dir_all(d.join(".hidden")).unwrap();
+        fs::create_dir_all(d.join(".claude")).unwrap(); // the default dir: same length as the prefix
+        fs::create_dir_all(d.join(".claude-3")).unwrap();
+        fs::create_dir_all(d.join(".claude-2")).unwrap();
+        fs::create_dir_all(d.join("a/shadow")).unwrap();
+        fs::create_dir_all(d.join("b")).unwrap();
+        fs::write(d.join(".claude.json"), "{}").unwrap(); // a file, not a dir
+        // subdirs hides dot dirs and sorts; dirs_with_prefix needs at least one extra character and a dir
+        assert_eq!(subdirs(&d), vec![d.join("a"), d.join("b")]);
+        let p = d.to_str().unwrap();
+        assert_eq!(dirs_with_prefix(p, ".claude"), vec![format!("{p}/.claude-2"), format!("{p}/.claude-3")]);
+        assert_eq!(dirs_with_prefix(p, ".nonexistent"), Vec::<String>::new());
+        assert_eq!(star_sub(p, "shadow"), vec![d.join("a/shadow").to_string_lossy().into_owned()]);
+        assert_eq!(star_sub(p, "nothing"), Vec::<String>::new());
+        let _ = fs::remove_dir_all(&d);
     }
 }
