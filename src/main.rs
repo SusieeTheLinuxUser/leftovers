@@ -188,7 +188,8 @@ fn next_reset(period: Option<&str>, now: f64) -> Option<f64> {
     let today = DateTime::from_timestamp(now.floor() as i64, 0)?.date_naive();
     let date = match period {
         "day" => today.succ_opt()?,
-        "week" => today + chrono::Days::new(u64::from(7 - today.weekday().num_days_from_monday())),
+        // checked like the day and month branches: at NaiveDate::MAX the next Monday doesn't exist
+        "week" => today.checked_add_days(chrono::Days::new(u64::from(7 - today.weekday().num_days_from_monday())))?,
         _ => {
             let (y, m) = if today.month() == 12 { (today.year() + 1, 1) } else { (today.year(), today.month() + 1) };
             NaiveDate::from_ymd_opt(y, m, 1)?
@@ -987,6 +988,15 @@ mod tests {
         assert_eq!(next_reset(Some("month"), utc(2026, 12, 31, 0, 0)), Some(utc(2027, 1, 1, 0, 0)));
         assert_eq!(next_reset(None, now), None);
         assert_eq!(next_reset(Some("week"), utc(2026, 11, 9, 5, 0)), Some(utc(2026, 11, 16, 0, 0))); // a Monday
+    }
+
+    #[test]
+    fn resets_at_max_date() {
+        // the week branch must give up (null resets) instead of adding days past NaiveDate::MAX
+        let max = NaiveDate::MAX.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp() as f64;
+        assert_eq!(next_reset(Some("week"), max), None);
+        assert_eq!(next_reset(Some("day"), max), None);
+        assert_eq!(next_reset(Some("month"), max), None);
     }
 
     #[test]
