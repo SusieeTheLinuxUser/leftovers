@@ -608,7 +608,8 @@ fn antigravity_used(fraction: Option<&Value>) -> Result<(f64, Value), Err> {
     Ok(match fraction {
         None => (100.0, json!(100)),
         Some(r) if r.is_i64() || r.is_u64() => {
-            let u = 100 * (1 - to_i64(r));
+            // saturate: a fraction outside 0..1 must not overflow i64 (the release build wraps)
+            let u = 100i64.saturating_mul(1i64.saturating_sub(to_i64(r)));
             (u as f64, json!(u))
         }
         Some(r) => {
@@ -932,6 +933,16 @@ mod tests {
                 json!({"name": "Claude & GPT", "used": 25.0, "resets": null}),
             ]
         );
+    }
+
+    #[test]
+    fn antigravity_used_extreme_fractions() {
+        // fractions outside 0..1 must saturate instead of overflowing i64 (Python's ints can't)
+        assert_eq!(antigravity_used(Some(&json!(0))).unwrap(), (100.0, json!(100)));
+        assert_eq!(antigravity_used(Some(&json!(1))).unwrap(), (0.0, json!(0)));
+        assert_eq!(antigravity_used(Some(&json!(9223372036854775807i64))).unwrap().1, json!(-9223372036854775808i64));
+        assert_eq!(antigravity_used(Some(&json!(-9223372036854775808i64))).unwrap().1, json!(9223372036854775807i64));
+        assert_eq!(antigravity_used(Some(&json!(18446744073709551615u64))).unwrap().1, json!(-9223372036854775808i64));
     }
 
     #[test]
